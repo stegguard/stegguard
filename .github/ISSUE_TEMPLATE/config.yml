@@ -1,0 +1,9 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Private security report
+    url: https://github.com/stegguard/stegguard/security/advisories/new
+    about: Report vulnerabilities privately. Do not open a public issue.
+  - name: Support policy
+    url: https://github.com/stegguard/stegguard/blob/main/SUPPORT.md
+    about: Check support scope and the information needed for a useful report.
+

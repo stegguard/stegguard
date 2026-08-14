@@ -1,0 +1,23 @@
+{
+  "corpus_version": "1.0",
+  "formats": [".png", ".svg", ".txt", ".wasm"],
+  "overall": {
+    "samples": 10,
+    "true_positives": 5,
+    "true_negatives": 5,
+    "false_positives": 0,
+    "false_negatives": 0,
+    "precision": 1.0,
+    "recall": 1.0,
+    "false_positive_rate": 0.0,
+    "false_negative_rate": 0.0
+  },
+  "families": {
+    "BINARY": {"samples": 2, "precision": 1.0, "recall": 1.0, "false_positive_rate": 0.0, "false_negative_rate": 0.0},
+    "LAYOUT": {"samples": 2, "precision": 1.0, "recall": 1.0, "false_positive_rate": 0.0, "false_negative_rate": 0.0},
+    "METADATA": {"samples": 2, "precision": 1.0, "recall": 1.0, "false_positive_rate": 0.0, "false_negative_rate": 0.0},
+    "STRUCTURAL": {"samples": 2, "precision": 1.0, "recall": 1.0, "false_positive_rate": 0.0, "false_negative_rate": 0.0},
+    "TEXT": {"samples": 2, "precision": 1.0, "recall": 1.0, "false_positive_rate": 0.0, "false_negative_rate": 0.0}
+  },
+  "limitations": "Synthetic compatibility smoke set only; not representative of production accuracy."
+}

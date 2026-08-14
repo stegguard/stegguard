@@ -1,0 +1,107 @@
+{
+  "corpus_version": "1.0",
+  "description": "Harmless synthetic contract cases for aggregate detection behavior.",
+  "cases": [
+    {
+      "id": "text-plain",
+      "family": "TEXT",
+      "filename": "plain.txt",
+      "encoding": "utf-8",
+      "content": "A plain sentence with ordinary spacing.\n",
+      "expected_detected": false,
+      "origin": "StegGuard synthetic fixture",
+      "license": "Apache-2.0"
+    },
+    {
+      "id": "text-zero-width",
+      "family": "TEXT",
+      "filename": "zero-width.txt",
+      "encoding": "utf-8",
+      "content": "visible\u200bhidden\n",
+      "expected_detected": true,
+      "origin": "StegGuard synthetic fixture",
+      "license": "Apache-2.0"
+    },
+    {
+      "id": "binary-wasm-plain",
+      "family": "BINARY",
+      "filename": "plain.wasm",
+      "encoding": "hex",
+      "content": "0061736d01000000",
+      "expected_detected": false,
+      "origin": "Minimal WebAssembly header generated for StegGuard",
+      "license": "Apache-2.0"
+    },
+    {
+      "id": "binary-wasm-invisible-unicode",
+      "family": "BINARY",
+      "filename": "unicode.wasm",
+      "encoding": "hex",
+      "content": "0061736d01000000e2808b",
+      "expected_detected": true,
+      "origin": "StegGuard synthetic fixture",
+      "license": "Apache-2.0"
+    },
+    {
+      "id": "layout-svg-visible",
+      "family": "LAYOUT",
+      "filename": "visible.svg",
+      "encoding": "utf-8",
+      "content": "<svg xmlns=\"http://www.w3.org/2000/svg\"><text>visible</text></svg>",
+      "expected_detected": false,
+      "origin": "StegGuard synthetic fixture",
+      "license": "Apache-2.0"
+    },
+    {
+      "id": "layout-svg-hidden",
+      "family": "LAYOUT",
+      "filename": "hidden.svg",
+      "encoding": "utf-8",
+      "content": "<svg xmlns=\"http://www.w3.org/2000/svg\"><text style=\"display:none\">hidden</text></svg>",
+      "expected_detected": true,
+      "origin": "StegGuard synthetic fixture",
+      "license": "Apache-2.0"
+    },
+    {
+      "id": "metadata-png-empty",
+      "family": "METADATA",
+      "filename": "empty.png",
+      "encoding": "hex",
+      "content": "89504e470d0a1a0a0000000049454e4400000000",
+      "expected_detected": false,
+      "origin": "StegGuard synthetic parser fixture",
+      "license": "Apache-2.0"
+    },
+    {
+      "id": "metadata-png-text",
+      "family": "METADATA",
+      "filename": "metadata.png",
+      "encoding": "hex",
+      "content": "89504e470d0a1a0a0000000374455874616263000000000000000049454e4400000000",
+      "expected_detected": true,
+      "origin": "StegGuard synthetic parser fixture",
+      "license": "Apache-2.0"
+    },
+    {
+      "id": "structural-png-standard",
+      "family": "STRUCTURAL",
+      "filename": "standard.png",
+      "encoding": "hex",
+      "content": "89504e470d0a1a0a0000000049454e4400000000",
+      "expected_detected": false,
+      "origin": "StegGuard synthetic parser fixture",
+      "license": "Apache-2.0"
+    },
+    {
+      "id": "structural-png-private",
+      "family": "STRUCTURAL",
+      "filename": "private.png",
+      "encoding": "hex",
+      "content": "89504e470d0a1a0a000000017670416778000000000000000049454e4400000000",
+      "expected_detected": true,
+      "origin": "StegGuard synthetic parser fixture",
+      "license": "Apache-2.0"
+    }
+  ]
+}
+

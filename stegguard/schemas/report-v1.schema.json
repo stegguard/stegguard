@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://stegguard.com/schemas/report-v1.schema.json",
+  "title": "StegGuard aggregate detection report",
+  "type": "object",
+  "required": ["schema_version", "stegguard_version", "scan_time", "total_files", "flagged_files", "results"],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "stegguard_version": {"type": "string"},
+    "scan_time": {"type": "string"},
+    "total_files": {"type": "integer", "minimum": 0},
+    "flagged_files": {"type": "integer", "minimum": 0},
+    "results": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["schema_version", "file", "file_mode", "severity", "total_hidden", "watermark"],
+        "properties": {
+          "schema_version": {"const": "1.0"},
+          "file": {"type": "string"},
+          "file_mode": {"enum": ["text", "binary"]},
+          "severity": {"enum": ["clean", "low", "medium", "high", "critical"]},
+          "total_hidden": {"type": "integer", "minimum": 0},
+          "error": {"type": ["string", "null"]},
+          "watermark": {"type": "object"}
+        },
+        "additionalProperties": true
+      }
+    }
+  },
+  "additionalProperties": true
+}

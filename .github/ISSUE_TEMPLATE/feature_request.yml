@@ -1,0 +1,27 @@
+name: Feature request
+description: Propose a detector, format, integration, or workflow improvement
+title: "[Feature]: "
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What user or security problem needs to be solved?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+      description: Include API, CLI, report, and compatibility effects when relevant.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Validation approach
+      description: Describe safe positive and negative fixtures and supported platforms.
+    validations:
+      required: true
+

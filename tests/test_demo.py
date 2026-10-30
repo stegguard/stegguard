@@ -16,6 +16,7 @@ def _run(script: str, *args: str) -> subprocess.CompletedProcess[str]:
         [sys.executable, str(DEMO_ROOT / script), *args],
         cwd=PROJECT_ROOT,
         text=True,
+        encoding="utf-8",
         capture_output=True,
         check=False,
         timeout=30,
@@ -33,7 +34,7 @@ def test_create_samples_writes_deterministic_safe_fixtures(tmp_path):
     assert second_run.returncode == 0, second_run.stderr
     assert (first / "suspicious.txt").read_bytes() == (second / "suspicious.txt").read_bytes()
     assert (first / "watermarked.png").read_bytes() == (second / "watermarked.png").read_bytes()
-    manifest = json.loads((first / "samples.json").read_text())
+    manifest = json.loads((first / "samples.json").read_text(encoding="utf-8"))
     assert manifest["safe_demo"] is True
     assert manifest["hidden_text"] == "DEMO"
     assert manifest["samples"] == ["suspicious.txt", "watermarked.png"]
@@ -46,7 +47,7 @@ def test_run_demo_exercises_real_cli_and_preserves_original(tmp_path):
 
     assert result.returncode == 0, result.stderr
     assert "Demo completed successfully" in result.stdout
-    summary = json.loads((output / "summary.json").read_text())
+    summary = json.loads((output / "summary.json").read_text(encoding="utf-8"))
     assert summary["status"] == "PASS"
     assert summary["network_used"] is False
     assert summary["original_preserved"] is True
@@ -65,8 +66,8 @@ def test_run_demo_exercises_real_cli_and_preserves_original(tmp_path):
         "watermark.html",
     }
     assert expected_reports <= {path.name for path in (output / "reports").iterdir()}
-    assert "<!DOCTYPE html>" in (output / "reports" / "detect.html").read_text()
-    assert "<!DOCTYPE html>" in (output / "reports" / "watermark.html").read_text()
+    assert "<!DOCTYPE html>" in (output / "reports" / "detect.html").read_text(encoding="utf-8")
+    assert "<!DOCTYPE html>" in (output / "reports" / "watermark.html").read_text(encoding="utf-8")
 
     suspicious = output / "samples" / "suspicious.txt"
     assert hashlib.sha256(suspicious.read_bytes()).hexdigest() == summary["original_sha256"]
@@ -77,10 +78,10 @@ def test_run_demo_refuses_to_overwrite_nonempty_output(tmp_path):
     output = tmp_path / "existing"
     output.mkdir()
     marker = output / "keep.txt"
-    marker.write_text("keep me")
+    marker.write_text("keep me", encoding="utf-8")
 
     result = _run("run_demo.py", "--output", str(output))
 
     assert result.returncode == 2
     assert "not empty" in result.stderr
-    assert marker.read_text() == "keep me"
+    assert marker.read_text(encoding="utf-8") == "keep me"

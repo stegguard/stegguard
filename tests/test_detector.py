@@ -457,22 +457,22 @@ class TestIsVenvPath(unittest.TestCase):
 
     def test_marker_file(self):
         with tempfile.TemporaryDirectory() as d:
-            Path(d, "pyvenv.cfg").write_text("home = /usr/bin\n")
+            Path(d, "pyvenv.cfg").write_text("home = /usr/bin\n", encoding="utf-8")
             p = Path(d, "main.go")
-            p.write_text("package main\n")
+            p.write_text("package main\n", encoding="utf-8")
             self.assertTrue(sd.is_venv_path(p))
 
     def test_no_marker(self):
         with tempfile.TemporaryDirectory() as d:
             p = Path(d, "main.go")
-            p.write_text("x\n")
+            p.write_text("x\n", encoding="utf-8")
             self.assertFalse(sd.is_venv_path(p))
 
     def test_lockfile_in_project_root_is_not_venv_marker(self):
         with tempfile.TemporaryDirectory() as d:
-            Path(d, "package-lock.json").write_text("{}\n")
+            Path(d, "package-lock.json").write_text("{}\n", encoding="utf-8")
             p = Path(d, "src.js")
-            p.write_text("console.log(1)\n")
+            p.write_text("console.log(1)\n", encoding="utf-8")
             self.assertFalse(sd.is_venv_path(p))
 
 
@@ -506,7 +506,7 @@ class TestCollectFiles(unittest.TestCase):
     def _make(self, *parts, txt="x"):
         p = self.root.joinpath(*parts)
         p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text(txt)
+        p.write_text(txt, encoding="utf-8")
         return p
 
     def test_flat(self):
@@ -841,7 +841,7 @@ class TestWriteJsonOutput(unittest.TestCase):
         out = Path(tempfile.mktemp(suffix=".json"))
         try:
             sd.write_json_output([r], str(out))
-            self.assertIn("stegguard_version", json.loads(out.read_text()))
+            self.assertIn("stegguard_version", json.loads(out.read_text(encoding="utf-8")))
         finally:
             p.unlink()
             out.unlink(missing_ok=True)
@@ -852,7 +852,7 @@ class TestWriteJsonOutput(unittest.TestCase):
         out = Path(tempfile.mktemp(suffix=".json"))
         try:
             sd.write_json_output([r1, r2], str(out))
-            self.assertEqual(json.loads(out.read_text())["flagged_files"], 1)
+            self.assertEqual(json.loads(out.read_text(encoding="utf-8"))["flagged_files"], 1)
         finally:
             p1.unlink()
             p2.unlink()
@@ -863,7 +863,7 @@ class TestWriteJsonOutput(unittest.TestCase):
         out = Path(tempfile.mktemp(suffix=".json"))
         try:
             sd.write_json_output([r], str(out))
-            self.assertEqual(json.loads(out.read_text())["flagged_files"], 1)
+            self.assertEqual(json.loads(out.read_text(encoding="utf-8"))["flagged_files"], 1)
         finally:
             p.unlink()
             out.unlink(missing_ok=True)
@@ -873,7 +873,7 @@ class TestWriteJsonOutput(unittest.TestCase):
         out = Path(tempfile.mktemp(suffix=".json"))
         try:
             sd.write_json_output([r], str(out))
-            self.assertEqual(json.loads(out.read_text())["flagged_files"], 1)
+            self.assertEqual(json.loads(out.read_text(encoding="utf-8"))["flagged_files"], 1)
         finally:
             p.unlink()
             out.unlink(missing_ok=True)
@@ -890,7 +890,7 @@ class TestWriteJsonOutput(unittest.TestCase):
         out = Path(tempfile.mktemp(suffix=".json"))
         try:
             sd.write_json_output([r], str(out))
-            payload = json.loads(out.read_text())
+            payload = json.loads(out.read_text(encoding="utf-8"))
             self.assertEqual(payload["flagged_files"], 1)
             self.assertEqual(payload["results"][0]["severity"], "high")
         finally:
@@ -923,7 +923,7 @@ class TestGenerateHtmlReport(unittest.TestCase):
         out = Path(tempfile.mktemp(suffix=".html"))
         try:
             sd.generate_html_report([sd.analyze_file(f) for f in files], str(out))
-            content = out.read_text()
+            content = out.read_text(encoding="utf-8")
             for lbl in ("CRITICAL", "HIGH", "MEDIUM", "LOW", "CLEAN"):
                 self.assertIn(lbl, content)
         finally:
@@ -935,7 +935,7 @@ class TestGenerateHtmlReport(unittest.TestCase):
         out = Path(tempfile.mktemp(suffix=".html"))
         try:
             sd.generate_html_report([sd.analyze_file(f) for f in files], str(out))
-            self.assertIn("html", out.read_text().lower())
+            self.assertIn("html", out.read_text(encoding="utf-8").lower())
         finally:
             [f.unlink() for f in files]
             out.unlink(missing_ok=True)
@@ -1132,7 +1132,7 @@ class TestHtmlReportBranches(unittest.TestCase):
         out = Path(tempfile.mktemp(suffix=".html"))
         try:
             sd.generate_html_report([sd.analyze_file(p)], str(out))
-            content = out.read_text()
+            content = out.read_text(encoding="utf-8")
             self.assertIn("html", content.lower())
         finally:
             p.unlink()
@@ -1228,7 +1228,7 @@ class TestDetectorMain(unittest.TestCase):
 
     def test_recursive_scan(self):
         with tempfile.TemporaryDirectory() as d:
-            (Path(d) / "a.py").write_text("x\u200by\n")
+            (Path(d) / "a.py").write_text("x\u200by\n", encoding="utf-8")
             out = self._run([d, "-r"])
             self.assertGreater(len(out), 0)
 
@@ -1295,9 +1295,9 @@ class TestDetectorMain(unittest.TestCase):
     def test_html_per_folder(self):
         with tempfile.TemporaryDirectory() as scan_dir:
             with tempfile.TemporaryDirectory() as out_dir:
-                (Path(scan_dir) / "a.py").write_text("x\u200by\n")
+                (Path(scan_dir) / "a.py").write_text("x\u200by\n", encoding="utf-8")
                 (Path(scan_dir) / "sub").mkdir()
-                (Path(scan_dir) / "sub" / "b.py").write_text("clean\n")
+                (Path(scan_dir) / "sub" / "b.py").write_text("clean\n", encoding="utf-8")
                 self._run([scan_dir, "-r", "--html-per-folder", out_dir])
 
     def test_ext_all(self):
@@ -1356,8 +1356,8 @@ class TestDetectorMainFunction(unittest.TestCase):
 
     def test_main_directory_scan(self):
         with tempfile.TemporaryDirectory() as d:
-            (Path(d) / "a.py").write_text("x\u200by\n")
-            (Path(d) / "b.py").write_text("clean\n")
+            (Path(d) / "a.py").write_text("x\u200by\n", encoding="utf-8")
+            (Path(d) / "b.py").write_text("clean\n", encoding="utf-8")
             out = self._run_main([d])
             self.assertGreater(len(out), 0)
 
@@ -1365,7 +1365,7 @@ class TestDetectorMainFunction(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             sub = Path(d) / "sub"
             sub.mkdir()
-            (sub / "c.py").write_text("x\u200by\n")
+            (sub / "c.py").write_text("x\u200by\n", encoding="utf-8")
             out = self._run_main(["-r", d])
             self.assertGreater(len(out), 0)
 
@@ -1379,7 +1379,7 @@ class TestDetectorMainFunction(unittest.TestCase):
 
     def test_main_no_venv(self):
         with tempfile.TemporaryDirectory() as d:
-            (Path(d) / "main.py").write_text("clean\n")
+            (Path(d) / "main.py").write_text("clean\n", encoding="utf-8")
             out = self._run_main(["--no-venv", "-r", d])
             self.assertGreater(len(out), 0)
 
@@ -1399,7 +1399,7 @@ class TestDetectorMainFunction(unittest.TestCase):
         try:
             self._run_main(["--json", str(out_json), str(p)])
             self.assertTrue(out_json.exists())
-            data = json.loads(out_json.read_text())
+            data = json.loads(out_json.read_text(encoding="utf-8"))
             self.assertIn("results", data)
         finally:
             p.unlink()
@@ -1409,7 +1409,7 @@ class TestDetectorMainFunction(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix="steg test ") as d:
             root = Path(d)
             p = root / "file with spaces.py"
-            p.write_text("hello\u200bworld\n")
+            p.write_text("hello\u200bworld\n", encoding="utf-8")
             out_html = root / "report file.html"
             out_json = root / "report file.json"
             out = self._run_main(["--html", str(out_html), "--json", str(out_json), str(p)])
@@ -1419,7 +1419,7 @@ class TestDetectorMainFunction(unittest.TestCase):
 
     def test_main_no_files_found(self):
         with tempfile.TemporaryDirectory() as d:
-            (Path(d) / "f.xyz").write_text("x\n")
+            (Path(d) / "f.xyz").write_text("x\n", encoding="utf-8")
             out = self._run_main(["--ext", ".py", d])
             self.assertGreater(len(out), 0)
 
@@ -1451,17 +1451,17 @@ class TestMainEdgeCases(unittest.TestCase):
             root = Path(d)
             venv = root / "venv"
             venv.mkdir()
-            (venv / "pip.py").write_text("x\n")
+            (venv / "pip.py").write_text("x\n", encoding="utf-8")
             out = self._det(["--no-venv", "--ext", ".rs", d])
             self.assertGreater(len(out), 0)
 
     def test_det_scan_with_skipped(self):
         with tempfile.TemporaryDirectory() as d:
             root = Path(d)
-            (root / "main.py").write_text("x\n")
+            (root / "main.py").write_text("x\n", encoding="utf-8")
             venv = root / "venv"
             venv.mkdir()
-            (venv / "pip.py").write_text("y\n")
+            (venv / "pip.py").write_text("y\n", encoding="utf-8")
             out = self._det(["-r", "--no-venv", d])
             self.assertGreater(len(out), 0)
 
@@ -1470,7 +1470,7 @@ class TestMainEdgeCases(unittest.TestCase):
             with tempfile.TemporaryDirectory() as scan_root:
                 sub = Path(scan_root) / "proj"
                 sub.mkdir()
-                (sub / "f.py").write_text("x\u200by\n")
+                (sub / "f.py").write_text("x\u200by\n", encoding="utf-8")
                 out = self._det(["--html-per-folder", d, scan_root])
                 self.assertIsInstance(out, str)
 
@@ -1480,7 +1480,7 @@ class TestMainEdgeCases(unittest.TestCase):
         try:
             out = self._det(["--json", str(json_out), str(p)])
             if json_out.exists():
-                self.assertIn("results", json.loads(json_out.read_text()))
+                self.assertIn("results", json.loads(json_out.read_text(encoding="utf-8")))
         finally:
             p.unlink()
             json_out.unlink(missing_ok=True)
@@ -1534,7 +1534,7 @@ class TestMainHtmlPerFolderPaths(unittest.TestCase):
         with tempfile.TemporaryDirectory() as scan_dir, tempfile.TemporaryDirectory() as out_dir:
             sub = Path(scan_dir) / "project"
             sub.mkdir()
-            (sub / "f.py").write_text("x\u200by\n")
+            (sub / "f.py").write_text("x\u200by\n", encoding="utf-8")
             out = self._det(["--html-per-folder", out_dir, "-r", scan_dir])
             self.assertIsInstance(out, str)
 
@@ -1547,7 +1547,7 @@ class TestMainHtmlPerFolderPaths(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             venv = Path(d) / "venv"
             venv.mkdir()
-            (venv / "pip.py").write_text("x\n")
+            (venv / "pip.py").write_text("x\n", encoding="utf-8")
             out = self._det(["--no-venv", "--ext", ".rs", d])
             self.assertIsInstance(out, str)
 
@@ -1559,7 +1559,7 @@ class TestMainHtmlPerFolderPaths(unittest.TestCase):
         ):
             sub = Path(scan_dir) / "proj"
             sub.mkdir()
-            (sub / "f.py").write_text("x\u200by\n")
+            (sub / "f.py").write_text("x\u200by\n", encoding="utf-8")
             html_path = hf.name
         try:
             out = self._det(["--html-per-folder", out_dir, "--html", html_path, scan_dir])
@@ -2119,7 +2119,7 @@ class TestHTMLReportWithLSB(unittest.TestCase):
         out = Path(tempfile.mktemp(suffix=".html"))
         try:
             sd.generate_html_report([sd.analyze_file(p)], str(out))
-            html = out.read_text()
+            html = out.read_text(encoding="utf-8")
             self.assertIn("LSB", html)
         finally:
             p.unlink()
@@ -2130,7 +2130,7 @@ class TestHTMLReportWithLSB(unittest.TestCase):
         out = Path(tempfile.mktemp(suffix=".html"))
         try:
             sd.generate_html_report([sd.analyze_file(p)], str(out))
-            html = out.read_text()
+            html = out.read_text(encoding="utf-8")
             self.assertIn("LSB Pixel Steg", html)
         finally:
             p.unlink()
@@ -2141,7 +2141,7 @@ class TestHTMLReportWithLSB(unittest.TestCase):
         out = Path(tempfile.mktemp(suffix=".html"))
         try:
             sd.generate_html_report([sd.analyze_file(p)], str(out))
-            html = out.read_text()
+            html = out.read_text(encoding="utf-8")
             self.assertGreater(len(html), 1000)
         finally:
             p.unlink()
@@ -2193,7 +2193,7 @@ class TestCoverageBoost(unittest.TestCase):
         out = Path(tempfile.mktemp(suffix=".html"))
         try:
             sd.generate_html_report([sd.analyze_file(p)], str(out))
-            content = out.read_text()
+            content = out.read_text(encoding="utf-8")
             self.assertIn("html", content.lower())
         finally:
             p.unlink()
@@ -2205,7 +2205,7 @@ class TestCoverageBoost(unittest.TestCase):
         out = Path(tempfile.mktemp(suffix=".html"))
         try:
             sd.generate_html_report([sd.analyze_file(p)], str(out))
-            content = out.read_text()
+            content = out.read_text(encoding="utf-8")
             self.assertIn("html", content.lower())
         finally:
             p.unlink()
@@ -2217,8 +2217,8 @@ class TestCoverageBoost(unittest.TestCase):
             root = Path(d)
             sub = root / "sub"
             sub.mkdir()
-            (root / "a.py").write_text("x\n")
-            (sub / "b.py").write_text("y\n")
+            (root / "a.py").write_text("x\n", encoding="utf-8")
+            (sub / "b.py").write_text("y\n", encoding="utf-8")
             os.chmod(str(sub), 0o000)
             try:
                 files, _ = sd.collect_files(root, {".py"}, True, False)
@@ -2231,8 +2231,8 @@ class TestCoverageBoost(unittest.TestCase):
             root = Path(d)
             venv = root / "venv"
             venv.mkdir()
-            (venv / "pip.py").write_text("x\n")
-            (root / "main.py").write_text("y\n")
+            (venv / "pip.py").write_text("x\n", encoding="utf-8")
+            (root / "main.py").write_text("y\n", encoding="utf-8")
             _, skipped = sd.collect_files(root, {".py"}, True, True)
             self.assertGreater(skipped, 0)
 
@@ -2283,10 +2283,10 @@ class TestExtraBranchCoverage(unittest.TestCase):
     def test_collect_files_venv_inside_nonrecursive_skipped(self):
         with tempfile.TemporaryDirectory() as d:
             root = Path(d)
-            (root / "main.py").write_text("x\n")
+            (root / "main.py").write_text("x\n", encoding="utf-8")
             venv = root / "venv"
             venv.mkdir()
-            (venv / "pip.py").write_text("y\n")
+            (venv / "pip.py").write_text("y\n", encoding="utf-8")
             files, skipped = sd.collect_files(root, {".py"}, True, True)
             names = [f.name for f in files]
             self.assertIn("main.py", names)
@@ -2296,7 +2296,7 @@ class TestExtraBranchCoverage(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             root = Path(d)
             env = root / ".env"
-            env.write_text("SECRET=x\n")
+            env.write_text("SECRET=x\n", encoding="utf-8")
             files, _ = sd.collect_files(root, {".env"}, False, False)
             self.assertEqual(len(files), 1)
 
@@ -2352,7 +2352,7 @@ def _run_coverage():
     for fpath in sorted(target):
         fname = Path(fpath).name
         try:
-            src = Path(fpath).read_text().splitlines()
+            src = Path(fpath).read_text(encoding="utf-8").splitlines()
         except Exception:
             continue
         import ast as _ast

@@ -17,6 +17,7 @@ def _run(*args: str) -> subprocess.CompletedProcess[str]:
         [sys.executable, str(BENCHMARK), *args],
         cwd=PROJECT_ROOT,
         text=True,
+        encoding="utf-8",
         capture_output=True,
         check=False,
         timeout=60,

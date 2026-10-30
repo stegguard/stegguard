@@ -21,6 +21,14 @@ DIM = "\x1b[2m"
 RESET = "\x1b[0m"
 
 
+def use_utf8_output() -> None:
+    """Emit UTF-8 on stdout/stderr so findings print on non-UTF-8 consoles (e.g. cp1252)."""
+    for stream in (sys.stdout, sys.stderr):
+        encoding = (getattr(stream, "encoding", None) or "").lower().replace("-", "")
+        if encoding != "utf8" and hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8")
+
+
 def color(text: str, *codes: str) -> str:
     """Wrap *text* in ANSI escape codes.  Returns plain text when stdout is not a TTY."""
     if not sys.stdout.isatty():

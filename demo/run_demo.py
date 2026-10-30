@@ -35,6 +35,7 @@ def _run_cli(arguments: list[str], *, findings_ok: bool = False) -> str:
         cwd=PROJECT_ROOT,
         env=environment,
         text=True,
+        encoding="utf-8",
         capture_output=True,
         check=False,
         timeout=60,

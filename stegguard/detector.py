@@ -326,7 +326,7 @@ BINARY_SUSPICIOUS_BYTES: dict[bytes, tuple[str, str, str]] = _build_binary_map()
 
 # ─── ANSI Colors ──────────────────────────────────────────────────────────────
 
-from stegguard.common import RED, YELLOW, GREEN, CYAN, BOLD, DIM, RESET, color
+from stegguard.common import RED, YELLOW, GREEN, CYAN, BOLD, DIM, RESET, color, use_utf8_output
 
 
 # ─── Detection ────────────────────────────────────────────────────────────────
@@ -2551,7 +2551,17 @@ def _load_pixels_pil(path: Path, limits: ScanLimits | None = None):
             fmt = img.format or "UNKNOWN"
             mode = img.mode
             w, h = img.size
-            validate_image_size(w, h, limits or resolve_limits(None))
+            policy = limits or resolve_limits(None)
+            validate_image_size(w, h, policy)
+            # Unsupported modes are converted to RGB below, so they decode to 3+ bytes/pixel.
+            bands = len(img.getbands())
+            if mode not in ("P", "L", "RGB", "RGBA", "LA"):
+                bands = max(bands, 3)
+            if w * h * bands > policy.max_decompressed_bytes:
+                raise ResourceLimitError(
+                    "max_decompressed_bytes exceeded: output is larger than "
+                    f"{policy.max_decompressed_bytes}"
+                )
 
             if mode == "P":  # palette-indexed
                 palette = list(img.getpalette())  # flat [R,G,B, ...]
@@ -3507,6 +3517,7 @@ def collect_files(root: Path, extensions: set, recursive: bool, skip_venvs: bool
 
 
 def main(argv: list[str] | None = None) -> int:
+    use_utf8_output()
     parser = argparse.ArgumentParser(
         prog="stegguard detect",
         description="Detect hidden steganographic characters across all supported file types",

@@ -32,7 +32,6 @@ dependencies = []
 [project.urls]
 Source = "https://github.com/stegguard/stegguard"
 Documentation = "https://github.com/stegguard/stegguard/tree/main/docs"
-Changelog = "https://github.com/stegguard/stegguard/blob/main/CHANGELOG.md"
 Issues = "https://github.com/stegguard/stegguard/issues"
 Security = "https://github.com/stegguard/stegguard/security/policy"
 

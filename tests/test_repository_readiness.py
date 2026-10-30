@@ -91,8 +91,15 @@ def test_project_metadata_names_people_and_repository_resources():
 
     assert metadata["authors"]
     assert metadata["maintainers"]
-    for label in ("Source", "Documentation", "Changelog", "Issues"):
+    for label in ("Source", "Documentation", "Issues"):
         assert metadata["urls"][label].startswith("https://github.com/stegguard/stegguard")
+
+
+def test_project_urls_do_not_link_to_the_untracked_changelog():
+    metadata = tomllib.loads(_read("pyproject.toml"))["project"]
+
+    assert "Changelog" not in metadata["urls"]
+    assert not any("CHANGELOG.md" in url for url in metadata["urls"].values())
 
 
 def test_pillow_behavior_is_an_explicit_optional_extra():

@@ -113,6 +113,31 @@ def test_changelog_lists_the_current_version_directly_below_unreleased():
     assert headings[1] == __version__
 
 
+def test_readme_links_and_images_resolve_outside_github():
+    readme = _read("README.md")
+    targets = re.findall(r"\]\(([^)\s]+)\)", readme) + re.findall(r'(?:src|href)="([^"]+)"', readme)
+
+    relative = [target for target in targets if not target.startswith(("https://", "#"))]
+    assert relative == []
+
+
+def test_readme_repository_links_point_at_files_in_the_repository():
+    readme = _read("README.md")
+    prefixes = (
+        "https://github.com/stegguard/stegguard/blob/main/",
+        "https://raw.githubusercontent.com/stegguard/stegguard/main/",
+    )
+    linked = {
+        target.removeprefix(prefix)
+        for target in re.findall(r"(https://[^)\s\"]+)", readme)
+        for prefix in prefixes
+        if target.startswith(prefix)
+    }
+
+    assert linked
+    assert [path for path in sorted(linked) if not (PROJECT_ROOT / path).is_file()] == []
+
+
 def test_pillow_behavior_is_an_explicit_optional_extra():
     metadata = tomllib.loads(_read("pyproject.toml"))["project"]
 
@@ -185,6 +210,9 @@ def test_showcase_page_documents_install_scan_and_html_reporting():
 def test_readme_displays_the_project_banner():
     readme = _read("README.md")
 
-    assert 'src="images/steg_banner.png"' in readme
+    assert (
+        'src="https://raw.githubusercontent.com/stegguard/stegguard/main/images/steg_banner.png"'
+        in readme
+    )
     assert 'alt="StegGuard: Uncovering Hidden Data"' in readme
     assert (PROJECT_ROOT / "images/steg_banner.png").is_file()

@@ -251,7 +251,7 @@ def test_scan_deadline_is_checked_after_configured_analyzer(tmp_path):
     source.write_bytes(b"video")
 
     def slow_analyzer(path, content):
-        time.sleep(0.01)
+        time.sleep(0.05)
         return {"status": "NOT_DETECTED", "confidence": 0.0}
 
     with pytest.raises(ValueError, match="max_scan_seconds"):

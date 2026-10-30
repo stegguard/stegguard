@@ -14,6 +14,7 @@ from pathlib import Path
 import pytest
 
 import stegguard.detector as detector
+from stegguard import __version__
 from stegguard.common import use_utf8_output
 from stegguard.reporting import atomic_write_text
 
@@ -101,7 +102,7 @@ def test_detector_subcommand_exposes_version():
     result = _run_cli("detect", "--version")
 
     assert result.returncode == 0
-    assert "stegguard 0.3.0" in result.stdout
+    assert result.stdout.strip() == f"stegguard {__version__}"
 
 
 def test_concurrent_report_writes_leave_one_complete_document(tmp_path):

@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import importlib.resources
 import json
+import re
 import tomllib
 from pathlib import Path
 
@@ -23,8 +24,10 @@ def test_package_uses_one_dynamic_version_source():
     assert metadata["tool"]["setuptools"]["dynamic"]["version"] == {
         "attr": "stegguard._version.__version__"
     }
-    assert "0.3.0" not in (PROJECT_ROOT / "stegguard" / "cli.py").read_text(encoding="utf-8")
-    assert "0.3.0" not in (PROJECT_ROOT / "stegguard" / "detector.py").read_text(encoding="utf-8")
+    version_literal = re.compile(r"[\"']v?\d+\.\d+\.\d+[\"']")
+    for module in ("cli.py", "detector.py"):
+        source = (PROJECT_ROOT / "stegguard" / module).read_text(encoding="utf-8")
+        assert version_literal.findall(source) == []
 
 
 def test_resource_policy_and_schema_version_are_public():

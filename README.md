@@ -1,14 +1,14 @@
 # StegGuard
 
 <p align="center">
-  <img src="images/steg_banner.png" alt="StegGuard: Uncovering Hidden Data" width="630">
+  <img src="https://raw.githubusercontent.com/stegguard/stegguard/main/images/steg_banner.png" alt="StegGuard: Uncovering Hidden Data" width="630">
 </p>
 
 **Find what is hiding in plain sight.**
 
 [![Python 3.12+](https://img.shields.io/badge/Python-3.12%2B-3776AB)](https://www.python.org/)
-[![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-4EAA25)](LICENSE)
-[![Runtime dependencies: 0](https://img.shields.io/badge/runtime_dependencies-0-2F855A)](pyproject.toml)
+[![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-4EAA25)](https://github.com/stegguard/stegguard/blob/main/LICENSE)
+[![Runtime dependencies: 0](https://img.shields.io/badge/runtime_dependencies-0-2F855A)](https://github.com/stegguard/stegguard/blob/main/pyproject.toml)
 
 StegGuard is a local-first toolkit for finding, decoding, and safely removing
 hidden content from files. It looks beyond ordinary metadata and scans for
@@ -44,7 +44,7 @@ Summary: .../demo-output/summary.json
 
 The demo makes no network requests and contains no executable or malicious
 payload. Open `demo-output/reports/detect.html` after the run to inspect the
-report. See [the demo guide](demo/README.md) for every generated artifact.
+report. See [the demo guide](https://github.com/stegguard/stegguard/blob/main/demo/README.md) for every generated artifact.
 
 ## Why StegGuard exists
 
@@ -90,7 +90,7 @@ python3 -m pip install "stegguard[images]"
 The supported Python range is 3.12 through 3.14. CI is configured for Linux,
 macOS, and Windows; hosted results are required before those targets are
 described as verified. Architecture details and current evidence are in
-[docs/platform-support.md](docs/platform-support.md).
+[docs/platform-support.md](https://github.com/stegguard/stegguard/blob/main/docs/platform-support.md).
 
 ## Quick start
 
@@ -144,7 +144,7 @@ Run `stegguard COMMAND --help` for command-specific options.
 For `detect`, exit status `0` means a completed clean scan, `1` means a
 completed scan with findings, and `2` means invalid input or an incomplete
 scan. The complete compatibility contract is in
-[docs/compatibility.md](docs/compatibility.md).
+[docs/compatibility.md](https://github.com/stegguard/stegguard/blob/main/docs/compatibility.md).
 
 ## What it detects
 
@@ -234,7 +234,7 @@ reported risk.
 
 Machine-readable reports carry `schema_version`. The supported schema is
 packaged at `stegguard/schemas/report-v1.schema.json` and its evolution policy
-is documented in [docs/compatibility.md](docs/compatibility.md).
+is documented in [docs/compatibility.md](https://github.com/stegguard/stegguard/blob/main/docs/compatibility.md).
 
 ## Python API
 
@@ -264,7 +264,7 @@ StegGuard says so.
 
 Scans have configurable limits for input bytes, decompression, image pixels,
 archive members, nesting depth, elapsed time, and retained findings. See
-[docs/resource-limits.md](docs/resource-limits.md) before processing uploads or
+[docs/resource-limits.md](https://github.com/stegguard/stegguard/blob/main/docs/resource-limits.md) before processing uploads or
 running StegGuard as a service.
 
 ## Current limitations
@@ -280,9 +280,6 @@ running StegGuard as a service.
 - Valid provenance means an asset passed the configured validation. It does not
   prove authorship. A missing mark does not prove human authorship either.
 
-The full requirement map and operational boundaries live in
-[CHECKLIST_STATUS.md](CHECKLIST_STATUS.md).
-
 ## Development
 
 ```bash
@@ -296,7 +293,7 @@ uv run ruff check stegguard tests demo scripts benchmarks
 The project intentionally keeps its runtime dependency-free. Tests may use
 development dependencies declared in `pyproject.toml`. Contributor setup,
 fixture safety, review expectations, and all local gates are in
-[CONTRIBUTING.md](CONTRIBUTING.md).
+[CONTRIBUTING.md](https://github.com/stegguard/stegguard/blob/main/CONTRIBUTING.md).
 
 ## Contributing
 
@@ -307,11 +304,11 @@ test time. Do not commit suspicious payloads, credentials, or generated reports.
 Open an issue or pull request at
 [github.com/stegguard/stegguard](https://github.com/stegguard/stegguard).
 
-Project policies: [security](SECURITY.md), [support](SUPPORT.md),
-[governance](GOVERNANCE.md), [releases](RELEASING.md),
-[detection quality](docs/detection-quality.md), and [changelog](CHANGELOG.md).
+Project policies: [security](https://github.com/stegguard/stegguard/blob/main/SECURITY.md), [support](https://github.com/stegguard/stegguard/blob/main/SUPPORT.md),
+[governance](https://github.com/stegguard/stegguard/blob/main/GOVERNANCE.md), [releases](https://github.com/stegguard/stegguard/blob/main/RELEASING.md),
+[detection quality](https://github.com/stegguard/stegguard/blob/main/docs/detection-quality.md), and [changelog](https://github.com/stegguard/stegguard/blob/main/CHANGELOG.md).
 
 ## License
 
-StegGuard is licensed under Apache License 2.0. See [LICENSE](LICENSE) and
-[NOTICE](NOTICE).
+StegGuard is licensed under Apache License 2.0. See [LICENSE](https://github.com/stegguard/stegguard/blob/main/LICENSE) and
+[NOTICE](https://github.com/stegguard/stegguard/blob/main/NOTICE).

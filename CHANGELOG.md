@@ -5,6 +5,8 @@ the Python API, CLI contract, and versioned report schema.
 
 ## Unreleased
 
+## 0.4.0
+
 ### Added
 
 - Resource budgets for input bytes, decompression, pixels, archive members,
@@ -17,6 +19,13 @@ the Python API, CLI contract, and versioned report schema.
 - Project security, support, governance, contribution, compatibility, platform,
   release, benchmark, and detection-quality documentation.
 
+### Changed
+
+- The HTML report loads no external resources and follows the system light or
+  dark color scheme.
+- CLI output is always UTF-8, including on Windows consoles and pipes that
+  default to a legacy code page.
+
 ### Fixed
 
 - Unified flagged-result aggregation, including LSB and watermark findings.
@@ -25,6 +34,8 @@ the Python API, CLI contract, and versioned report schema.
 - Bounded PNG and nested-container processing.
 - Remote-manifest resolve-then-connect races and external-tool launch failures.
 - Cross-platform external-tool integration fixtures and output creation races.
+- Concurrent report writes on Windows no longer fail with `PermissionError`.
+- The decompression budget is enforced when images are decoded with Pillow.
 
 ### Security
 

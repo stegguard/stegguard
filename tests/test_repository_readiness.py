@@ -104,13 +104,13 @@ def test_project_urls_do_not_include_a_changelog_link():
     assert not any("CHANGELOG.md" in url for url in metadata["urls"].values())
 
 
-def test_changelog_lists_unreleased_changes_above_the_current_version():
+def test_changelog_lists_the_current_version_directly_below_unreleased():
     changelog = _read("CHANGELOG.md")
     headings = re.findall(r"^## (.+)$", changelog, re.M)
 
     assert changelog.startswith("# Changelog\n")
     assert headings[0] == "Unreleased"
-    assert __version__ in headings[1:]
+    assert headings[1] == __version__
 
 
 def test_pillow_behavior_is_an_explicit_optional_extra():

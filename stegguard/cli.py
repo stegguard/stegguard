@@ -9,6 +9,7 @@ import argparse
 import json
 import sys
 
+from stegguard.common import use_utf8_output
 from stegguard.limits import add_limit_arguments, limits_from_namespace
 from stegguard._version import __version__
 from stegguard.reporting import atomic_write_text
@@ -172,6 +173,7 @@ Examples:
 
 
 def main(argv: list[str] | None = None) -> int:
+    use_utf8_output()
     arguments = list(sys.argv[1:] if argv is None else argv)
     if arguments and arguments[0] == "detect":
         return cmd_detect(arguments[1:])

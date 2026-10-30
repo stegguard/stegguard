@@ -326,7 +326,7 @@ BINARY_SUSPICIOUS_BYTES: dict[bytes, tuple[str, str, str]] = _build_binary_map()
 
 # ─── ANSI Colors ──────────────────────────────────────────────────────────────
 
-from stegguard.common import RED, YELLOW, GREEN, CYAN, BOLD, DIM, RESET, color
+from stegguard.common import RED, YELLOW, GREEN, CYAN, BOLD, DIM, RESET, color, use_utf8_output
 
 
 # ─── Detection ────────────────────────────────────────────────────────────────
@@ -1271,15 +1271,15 @@ def print_results(results: dict, verbose: bool = False, decode: bool = False):
 
 def severity_html(total_hidden, tw, mixed, lsb_suspicious: bool = False):
     if total_hidden == 0 and not tw and not mixed and not lsb_suspicious:
-        return "clean", "CLEAN", "#00ff9d"
+        return "clean", "CLEAN", "var(--clean)"
     score = total_hidden + len(tw) * 0.5 + (5 if mixed else 0) + (8 if lsb_suspicious else 0)
     if score >= 20:
-        return "critical", "CRITICAL", "#ff2d55"
+        return "critical", "CRITICAL", "var(--critical)"
     if score >= 8:
-        return "high", "HIGH", "#ff6b35"
+        return "high", "HIGH", "var(--high)"
     if score >= 2:
-        return "medium", "MEDIUM", "#ffd60a"
-    return "low", "LOW", "#00b4d8"
+        return "medium", "MEDIUM", "var(--medium)"
+    return "low", "LOW", "var(--low)"
 
 
 def _watermark_requires_attention(result: dict) -> bool:
@@ -1442,7 +1442,7 @@ THREAT_INFO = {
     "zero_width": {
         "title": "Zero-Width Characters",
         "badge": "ZWC",
-        "color": "#ffd60a",
+        "color": "var(--medium)",
         "what": (
             "Invisible Unicode code points (U+200B, U+200C, U+200D, U+FEFF, etc.) that occupy "
             "zero visual space. Completely undetectable in all editors, browsers, and renderers "
@@ -1475,7 +1475,7 @@ THREAT_INFO = {
     "homoglyphs": {
         "title": "Homoglyph Characters",
         "badge": "HGL",
-        "color": "#ff2d55",
+        "color": "var(--critical)",
         "what": (
             "Characters from Cyrillic, Greek, or other scripts that are visually identical to "
             "Latin letters but have different Unicode code points. Example: Cyrillic a (U+0430) "
@@ -1508,7 +1508,7 @@ THREAT_INFO = {
     "other_suspicious": {
         "title": "BIDI and Control Characters",
         "badge": "BIDI",
-        "color": "#ff6b35",
+        "color": "var(--high)",
         "what": (
             "Unicode directional overrides (U+202A-U+202E, U+2066-U+2069), non-breaking spaces "
             "(U+00A0), and invisible script fillers (Hangul: U+3164, U+115F). These change how "
@@ -1541,7 +1541,7 @@ THREAT_INFO = {
     "trailing": {
         "title": "Trailing Whitespace",
         "badge": "SPC",
-        "color": "#00b4d8",
+        "color": "var(--low)",
         "what": (
             "Space (U+0020) or tab (U+0009) characters appearing after the last visible character "
             "on a line, before the newline. Completely invisible in all editors, GitHub, terminals, "
@@ -1574,7 +1574,7 @@ THREAT_INFO = {
     "mixed_endings": {
         "title": "Mixed Line Endings",
         "badge": "EOL",
-        "color": "#9b5de5",
+        "color": "var(--eol)",
         "what": (
             "File contains more than one type of line ending (LF \\n, CRLF \\r\\n, or CR \\r). "
             "Completely invisible in all editors and diff tools unless specifically configured "
@@ -1604,123 +1604,128 @@ THREAT_INFO = {
 
 
 REPORT_CSS = """
-:root{--bg:#080c10;--s:#0d1117;--s2:#161b22;--b:#21262d;--t:#c9d1d9;--td:#6e7681;
-  --g:#00ff9d;--r:#ff2d55;--o:#ff6b35;--y:#ffd60a;--bl:#00b4d8;--p:#9b5de5;
-  --mono:'Share Tech Mono',monospace;--disp:'Rajdhani',sans-serif;}
+:root{--bg:#FAF9F5;--s:#F0EEE6;--s2:#E9E6DB;--b:#DFD9CA;--t:#1F1E1D;--td:#71695C;--accent:#B04A2C;
+  --critical:#B3261E;--high:#B04A2C;--medium:#9A6620;--low:#4A6B8A;--clean:#57794C;--lsb:#8A4A7A;--eol:#6A5A8C;
+  --c:var(--td);
+  --mono:ui-monospace,'SF Mono',SFMono-Regular,Menlo,Consolas,'Liberation Mono',monospace;
+  --disp:'Iowan Old Style','Palatino Linotype',Palatino,Georgia,serif;
+  --body:system-ui,-apple-system,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif;color-scheme:light dark}
+@media (prefers-color-scheme: dark){:root{--bg:#1F1E1B;--s:#262521;--s2:#2D2C27;--b:#3A382F;--t:#EDEAE2;--td:#A29C8E;--accent:#E08D6D;
+  --critical:#F2867A;--high:#E08D6D;--medium:#D9A85C;--low:#8FAEC9;--clean:#98BA8A;--lsb:#D69CC8;--eol:#B3A6D9}}
 *{box-sizing:border-box;margin:0;padding:0}
-body{background:var(--bg);color:var(--t);font-family:var(--disp);font-size:15px;line-height:1.6;min-height:100vh}
-body::before{content:'';position:fixed;inset:0;background:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,255,157,.015) 2px,rgba(0,255,157,.015) 4px);pointer-events:none;z-index:9999}
-.hdr{background:linear-gradient(135deg,#0d1117,#0a1628);border-bottom:1px solid var(--b);padding:2.5rem 2rem 2rem;position:relative;overflow:hidden}
-.hdr::after{content:'STEG//DETECT';position:absolute;right:-20px;top:50%;transform:translateY(-50%);font-family:var(--mono);font-size:7rem;color:rgba(0,255,157,.03);white-space:nowrap;pointer-events:none;letter-spacing:-4px}
-.ht{display:flex;align-items:flex-start;justify-content:space-between;gap:1rem;flex-wrap:wrap}
-.lg{display:flex;align-items:center;gap:1rem}
-.li{width:48px;height:48px;border:2px solid var(--g);display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:1.1rem;color:var(--g);box-shadow:0 0 20px rgba(0,255,157,.2);flex-shrink:0}
-h1{font-family:var(--disp);font-size:1.8rem;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:#fff}
-h1 span{color:var(--g)}
-.hs{font-family:var(--mono);font-size:.75rem;color:var(--td);margin-top:.25rem;letter-spacing:1px}
-.sm{text-align:right;font-family:var(--mono);font-size:.72rem;color:var(--td);line-height:1.8}
+body{background:var(--bg);color:var(--t);font-family:var(--body);font-size:15px;line-height:1.6;min-height:100vh;overflow-wrap:anywhere}
+a{color:var(--accent)}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.tone{color:var(--c)}
+.muted{color:var(--td)}
+.hdr{border-bottom:1px solid var(--b);padding:2rem}
+.ht{display:flex;align-items:flex-start;justify-content:space-between;gap:1rem 2rem;flex-wrap:wrap;max-width:1280px;margin:0 auto}
+h1{font-family:var(--disp);font-size:1.9rem;font-weight:600;line-height:1.2}
+.hs{color:var(--td);margin-top:.25rem}
+.sm{font-family:var(--mono);font-size:.78rem;color:var(--td);line-height:1.8}
 .sm strong{color:var(--t)}
-.sg{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:1px;background:var(--b);border-bottom:1px solid var(--b)}
-.sc{background:var(--s);padding:1.4rem 1.2rem;display:flex;flex-direction:column;gap:.25rem;position:relative;overflow:hidden;transition:background .2s}
-.sc:hover{background:var(--s2)}
-.sc::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:var(--ac,var(--g))}
-.sn{font-family:var(--mono);font-size:2.2rem;color:var(--ac,var(--g));line-height:1}
-.sl{font-size:.7rem;letter-spacing:1.5px;text-transform:uppercase;color:var(--td);font-weight:600}
-.ss{font-family:var(--mono);font-size:.68rem;color:var(--td);margin-top:.15rem}
-.mw{max-width:1280px;margin:0 auto;padding:2rem;display:grid;grid-template-columns:260px 1fr;gap:2rem;align-items:start}
-.sb{position:sticky;top:calc(48px + 1rem);max-height:calc(100vh - 48px - 3rem);overflow-y:auto}
-.sbx{background:var(--s);border:1px solid var(--b);margin-bottom:1rem;overflow:hidden}
-.sbt{padding:.6rem 1rem;font-size:.65rem;letter-spacing:2px;text-transform:uppercase;color:var(--td);background:var(--s2);border-bottom:1px solid var(--b);font-weight:700;font-family:var(--mono)}
-.ni{display:flex;align-items:center;justify-content:space-between;padding:.5rem 1rem;border-bottom:1px solid var(--b);text-decoration:none;color:var(--t);font-size:.82rem;transition:all .15s;gap:.5rem}
+.sg{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));border-bottom:1px solid var(--b)}
+.sc{padding:1rem 1.2rem;display:flex;flex-direction:column;gap:.15rem;border-right:1px solid var(--b);border-bottom:1px solid var(--b);border-top:2px solid var(--c)}
+.sn{font-family:var(--mono);font-size:1.7rem;color:var(--c);line-height:1.1}
+.sl{font-size:.8rem;font-weight:600}
+.ss{font-size:.75rem;color:var(--td)}
+.mw{max-width:1280px;margin:0 auto;padding:2rem;display:grid;grid-template-columns:minmax(0,1fr);gap:2rem;align-items:start}
+.sb{display:flex;flex-direction:column;gap:1rem}
+.sbx{border:1px solid var(--b);border-radius:4px;overflow:hidden}
+.sbt{padding:.5rem 1rem;font-size:.75rem;font-weight:600;color:var(--td);background:var(--s);border-bottom:1px solid var(--b)}
+.ni{display:flex;align-items:center;justify-content:space-between;padding:.5rem 1rem;border-bottom:1px solid var(--b);text-decoration:none;color:var(--t);gap:.5rem;min-height:44px}
 .ni:last-child{border-bottom:none}
-.ni:hover{background:var(--s2);color:#fff}
-.nl{flex:1;font-family:var(--mono);font-size:.75rem;word-break:break-all}
-.nb{font-family:var(--mono);font-size:.65rem;padding:1px 6px;border:1px solid;flex-shrink:0}
-.leg{display:flex;align-items:center;gap:.6rem;padding:.45rem 1rem;border-bottom:1px solid var(--b);font-size:.78rem}
+.ni:hover{background:var(--s)}
+.nl{flex:1;font-family:var(--mono);font-size:.78rem;word-break:break-all}
+.bdg,.sv,.nb,.fsum-sev,.mode,.fsum-cnt span{font-family:var(--mono);font-weight:600;color:var(--c);border:1px solid color-mix(in srgb,var(--c) 35%,transparent);background:color-mix(in srgb,var(--c) 10%,transparent);border-radius:3px;white-space:nowrap}
+.bdg{font-size:.68rem;padding:1px 7px}
+.sv{font-size:.75rem;padding:3px 10px;flex-shrink:0}
+.nb{font-size:.65rem;padding:1px 6px;flex-shrink:0}
+.mode{font-size:.6rem;padding:1px 6px;margin-left:6px;vertical-align:middle}
+.leg{display:flex;align-items:center;gap:.6rem;padding:.45rem 1rem;border-bottom:1px solid var(--b);font-size:.82rem}
 .leg:last-child{border-bottom:none}
-.ld{width:8px;height:8px;border-radius:50%;flex-shrink:0}
-.fl2{display:flex;flex-direction:column;gap:1.5rem}
-.card{background:var(--s);border:1px solid var(--b);overflow:hidden}
-.ch{display:flex;align-items:center;justify-content:space-between;padding:1rem 1.2rem;background:var(--s2);border-bottom:1px solid var(--b);gap:1rem;flex-wrap:wrap}
-.cm{display:flex;align-items:center;gap:.8rem}
-.ci{font-size:1.4rem}
-.cn{font-family:var(--mono);font-size:.95rem;color:#fff}
-.cp{font-family:var(--mono);font-size:.68rem;color:var(--td);margin-top:.1rem}
-.sv{font-family:var(--mono);font-size:.7rem;letter-spacing:2px;padding:3px 10px;border:1px solid;font-weight:700;flex-shrink:0}
+.ld{width:8px;height:8px;border-radius:50%;flex-shrink:0;background:var(--c)}
+.fl2{display:flex;flex-direction:column;gap:1.5rem;min-width:0}
+.card{border:1px solid var(--b);border-radius:6px;overflow:hidden}
+.ch{display:flex;align-items:center;justify-content:space-between;padding:.9rem 1.2rem;background:var(--s);border-bottom:1px solid var(--b);gap:1rem;flex-wrap:wrap}
+.cm{min-width:0}
+.cn{font-family:var(--mono);font-size:.95rem;font-weight:600}
+.cp{font-family:var(--mono);font-size:.72rem;color:var(--td);margin-top:.1rem;word-break:break-all}
 .cb{padding:1rem;display:flex;flex-direction:column;gap:1rem}
-.fb{border:1px solid rgba(128,128,128,.2);overflow:hidden}
-.fh{display:flex;align-items:center;gap:.75rem;padding:.6rem 1rem;border-bottom:1px solid rgba(128,128,128,.15);flex-wrap:wrap;background:rgba(0,0,0,.2)}
-.bdg{font-family:var(--mono);font-size:.6rem;letter-spacing:1px;padding:2px 7px;border:1px solid;font-weight:700}
-.ftt{font-weight:600;font-size:.88rem;color:#fff;flex:1}
-.fc{font-family:var(--mono);font-size:.72rem;color:var(--td)}
-.fn{padding:.75rem 1rem;font-size:.82rem;color:var(--t);line-height:1.6}
-.tbl{width:100%;border-collapse:collapse;font-family:var(--mono);font-size:.8rem}
-.tbl th{background:var(--s2);color:var(--td);font-size:.65rem;letter-spacing:1.5px;text-transform:uppercase;padding:.5rem 1rem;text-align:left;border-bottom:1px solid var(--b);font-weight:700}
-.tbl td{padding:.45rem 1rem;border-bottom:1px solid var(--b);color:var(--t);vertical-align:middle}
+.fb{border:1px solid color-mix(in srgb,var(--c) 30%,var(--b));border-radius:4px;overflow-x:auto}
+.fh{display:flex;align-items:center;gap:.75rem;padding:.55rem 1rem;border-bottom:1px solid var(--b);flex-wrap:wrap;background:color-mix(in srgb,var(--c) 6%,var(--s))}
+.fbody{padding:.75rem 1rem}
+.ftt{font-weight:600;font-size:.9rem;flex:1}
+.fc{font-family:var(--mono);font-size:.75rem;color:var(--td)}
+.fn{padding:.75rem 1rem;font-size:.85rem}
+.note{margin:1rem auto 0;max-width:1280px;padding:0 2rem;color:var(--td)}
+.tbl{width:100%;border-collapse:collapse;font-family:var(--mono);font-size:.8rem;overflow-wrap:normal}
+.tbl th{background:var(--s);color:var(--td);font-size:.7rem;font-weight:600;padding:.45rem 1rem;text-align:left;border-bottom:1px solid var(--b);white-space:nowrap}
+.tbl td{padding:.4rem 1rem;border-bottom:1px solid var(--b);vertical-align:middle}
 .tbl tr:last-child td{border-bottom:none}
-.tbl tr:hover td{background:rgba(255,255,255,.02)}
-.tbl code{background:var(--s2);color:var(--g);padding:1px 5px;font-size:.78rem}
-.rr td{background:rgba(255,45,85,.06);color:var(--r)}
+.tbl code{background:var(--s);padding:1px 5px;border-radius:3px}
+.tbl.spaced{margin-top:8px}
+.ctx{font-size:.72rem;color:var(--td);word-break:break-all}
+.rr td{background:color-mix(in srgb,var(--critical) 8%,transparent);color:var(--critical)}
 .mr{color:var(--td);font-style:italic;text-align:center}
-.glyph{display:inline-block;padding:1px 8px;background:var(--s2);border:1px solid var(--b);font-size:.95rem;color:var(--r)}
-.bw{height:6px;background:var(--s2);width:100%;max-width:200px}
-.bar{height:100%;background:var(--bl)}
-.clean{padding:1.2rem;text-align:center;color:var(--g);font-family:var(--mono);font-size:.85rem;background:rgba(0,255,157,.04);border:1px dashed rgba(0,255,157,.2)}
+.glyph{display:inline-block;padding:1px 8px;background:var(--s);border:1px solid var(--b);border-radius:3px;font-size:.95rem;color:var(--critical)}
+.bw{height:6px;background:var(--s2);width:100%;max-width:200px;border-radius:3px;overflow:hidden}
+.bar{height:100%;background:var(--low)}
+.clean{padding:1rem;text-align:center;color:var(--clean);font-family:var(--mono);font-size:.85rem;border:1px dashed color-mix(in srgb,var(--clean) 40%,transparent);border-radius:4px}
+.validation-errors{padding:.5rem 1rem .75rem 2rem}
+.provenance-timeline{margin-top:.5rem}
+.provenance-timeline ul{padding-left:1.25rem}
 .trs{max-width:1280px;margin:0 auto 2rem;padding:0 2rem}
-.sh{font-family:var(--disp);font-size:.65rem;letter-spacing:3px;text-transform:uppercase;color:var(--td);font-weight:700;margin-bottom:1rem;padding-bottom:.5rem;border-bottom:1px solid var(--b)}
-.rg{display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:1rem}
-.rc{background:var(--s);border:1px solid var(--b);padding:1.2rem}
-.rh{display:flex;align-items:center;gap:.75rem;margin-bottom:.75rem;padding-left:.75rem}
-.rb{font-family:var(--mono);font-size:.65rem;letter-spacing:1px;font-weight:700}
-.rt{font-weight:700;font-size:.92rem;color:#fff}
-.rw{font-size:.8rem;color:var(--t);line-height:1.6;margin-bottom:.85rem}
+.sh{font-family:var(--disp);font-size:1.35rem;font-weight:600;margin-bottom:1rem;padding-bottom:.5rem;border-bottom:1px solid var(--b)}
+.rg{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,340px),1fr));gap:1rem}
+.rc{border:1px solid var(--b);border-radius:6px;padding:1.1rem}
+.rh{display:flex;align-items:center;gap:.75rem;margin-bottom:.75rem;padding-left:.75rem;border-left:3px solid var(--c)}
+.rb{font-family:var(--mono);font-size:.7rem;font-weight:600;color:var(--c)}
+.rt{font-weight:600}
+.rw{font-size:.85rem;margin-bottom:.85rem}
 .rl{list-style:none;display:flex;flex-direction:column;gap:.4rem;margin-bottom:1rem}
-.rl li{font-size:.78rem;color:var(--td);line-height:1.5;padding-left:.75rem;border-left:2px solid var(--b)}
+.rl li{font-size:.8rem;color:var(--td);padding-left:.75rem;border-left:2px solid var(--b)}
 .rl li strong{color:var(--t)}
-.rf{background:var(--s2);border:1px solid var(--b);padding:.5rem .75rem;display:flex;gap:.6rem;align-items:flex-start;flex-wrap:wrap}
-.fl{font-family:var(--mono);font-size:.6rem;letter-spacing:1.5px;color:var(--g);font-weight:700;padding-top:1px;flex-shrink:0}
-.rf code{font-family:var(--mono);font-size:.72rem;color:var(--td);word-break:break-all;flex:1}
-.ftr{border-top:1px solid var(--b);padding:1.5rem 2rem;text-align:center;font-family:var(--mono);font-size:.7rem;color:var(--td);letter-spacing:1px}
-.off{font-family:var(--mono);font-size:.68rem;color:#58a6ff;background:rgba(88,166,255,.08);padding:1px 5px;border-radius:2px;white-space:nowrap;letter-spacing:.3px}
-.sev-clean{color:#00ff9d!important}.sev-low{color:#00b4d8!important}.sev-medium{color:#ffd60a!important}.sev-high{color:#ff6b35!important}.sev-critical{color:#ff2d55!important}
-@media(max-width:900px){.mw{grid-template-columns:1fr}.sb{position:static;max-height:none}}
-/* ── Filter bar — full-width sticky strip between stats and content ───────── */
-.fbar{display:flex;align-items:center;gap:1rem;padding:.75rem 2rem;background:var(--s);border-bottom:1px solid var(--b);flex-wrap:wrap;position:sticky;top:0;z-index:100;box-shadow:0 2px 12px rgba(0,0,0,.4)}
-.fbar-label{font-family:var(--mono);font-size:.65rem;letter-spacing:1.5px;color:var(--td);text-transform:uppercase;white-space:nowrap}
+.rf{background:var(--s);border:1px solid var(--b);border-radius:4px;padding:.5rem .75rem;display:flex;gap:.6rem;align-items:flex-start;flex-wrap:wrap}
+.fl{font-family:var(--mono);font-size:.65rem;font-weight:600;color:var(--clean);padding-top:1px;flex-shrink:0}
+.rf code{font-family:var(--mono);font-size:.75rem;color:var(--td);word-break:break-all;flex:1}
+.ftr{border-top:1px solid var(--b);padding:1.5rem 2rem;text-align:center;font-size:.8rem;color:var(--td)}
+.off{font-family:var(--mono);font-size:.7rem;color:var(--low);white-space:nowrap}
+.fbar{display:flex;align-items:center;gap:.5rem 1rem;padding:.6rem 2rem;background:var(--bg);border-bottom:1px solid var(--b);flex-wrap:wrap;position:sticky;top:0;z-index:100}
+.fbar-label{font-size:.8rem;color:var(--td);white-space:nowrap}
 .fbar-btns{display:flex;gap:.4rem;flex-wrap:wrap}
-.fbtn{font-family:var(--mono);font-size:.65rem;font-weight:700;letter-spacing:1px;padding:.28rem .72rem;border-radius:3px;cursor:pointer;border:1px solid transparent;background:transparent;color:var(--fc,var(--td));border-color:color-mix(in srgb,var(--fc,var(--td)) 30%,transparent);transition:all .15s;white-space:nowrap}
-.fbtn:hover{background:color-mix(in srgb,var(--fc,var(--td)) 12%,transparent);border-color:color-mix(in srgb,var(--fc,var(--td)) 60%,transparent)}
-.fbtn.active{background:color-mix(in srgb,var(--fc,var(--td)) 20%,transparent);border-color:var(--fc,var(--td));color:var(--fc,var(--td));box-shadow:0 0 8px color-mix(in srgb,var(--fc,var(--td)) 25%,transparent)}
-.fbtn[data-sev="all"]{--fc:#c9d1d9}
-.fbar-count{font-family:var(--mono);font-size:.65rem;color:var(--td);margin-left:auto;white-space:nowrap}
-/* ── Hidden card / nav item (filtered out) ───────────────────────────────── */
-.card.hidden{display:none}
-.ni.hidden{display:none}
-/* ── Empty state when filter matches nothing ─────────────────────────────── */
-#filter-empty{display:none;text-align:center;padding:4rem 2rem;font-family:var(--mono);font-size:.85rem;color:var(--td)}
+.fbtn{font-family:var(--mono);font-size:.7rem;font-weight:600;min-height:36px;padding:0 .75rem;border-radius:3px;cursor:pointer;background:transparent;color:var(--c);border:1px solid color-mix(in srgb,var(--c) 35%,transparent)}
+.fbtn:hover{background:color-mix(in srgb,var(--c) 8%,transparent)}
+.fbtn.active{background:color-mix(in srgb,var(--c) 16%,transparent);border-color:var(--c)}
+.fbtn[data-sev="all"]{--c:var(--t)}
+.fbar-count{font-family:var(--mono);font-size:.72rem;color:var(--td);margin-left:auto;white-space:nowrap}
+.card.hidden,.ni.hidden{display:none}
+#filter-empty{display:none;text-align:center;padding:4rem 2rem;color:var(--td)}
 #filter-empty.visible{display:block}
-/* ── File summary panel ──────────────────────────────────────────────────── */
-.fsummary{max-width:1280px;margin:0 auto;padding:0 2rem 1.5rem}
-.fsummary-inner{background:var(--s);border:1px solid var(--b);overflow:hidden}
-.fsummary-hdr{display:flex;align-items:center;justify-content:space-between;padding:.65rem 1.1rem;background:var(--s2);border-bottom:1px solid var(--b)}
-.fsummary-title{font-family:var(--mono);font-size:.65rem;letter-spacing:2px;text-transform:uppercase;color:var(--td);font-weight:700}
-.fsummary-meta{font-family:var(--mono);font-size:.62rem;color:var(--td)}
-.fsum-table{width:100%;border-collapse:collapse;font-size:.8rem}
-.fsum-table th{font-family:var(--mono);font-size:.6rem;letter-spacing:1.2px;text-transform:uppercase;color:var(--td);padding:.5rem .9rem;text-align:left;border-bottom:1px solid var(--b);background:var(--s2);font-weight:600;white-space:nowrap}
-.fsum-table td{padding:.48rem .9rem;border-bottom:1px solid rgba(255,255,255,.04);vertical-align:middle}
+.fsummary{max-width:1280px;margin:0 auto;padding:1.5rem 2rem 0}
+.fsummary-inner{border:1px solid var(--b);border-radius:6px;overflow:hidden}
+.fsummary-hdr{display:flex;align-items:center;justify-content:space-between;padding:.6rem 1.1rem;background:var(--s);border-bottom:1px solid var(--b)}
+.fsummary-title{font-weight:600;font-size:.85rem}
+.fsummary-meta{font-family:var(--mono);font-size:.72rem;color:var(--td)}
+#summary-body{overflow-x:auto}
+.fsum-table{width:100%;border-collapse:collapse;font-size:.82rem;overflow-wrap:normal}
+.fsum-table th{font-size:.7rem;font-weight:600;color:var(--td);padding:.45rem .9rem;text-align:left;border-bottom:1px solid var(--b);white-space:nowrap}
+.fsum-table td{padding:.45rem .9rem;border-bottom:1px solid var(--b);vertical-align:middle}
 .fsum-table tr:last-child td{border-bottom:none}
-.fsum-table tr{cursor:pointer;transition:background .12s}
-.fsum-table tr:hover td{background:rgba(255,255,255,.03)}
-.fsum-fname{font-family:var(--mono);font-size:.76rem;color:var(--t);font-weight:500;white-space:nowrap;max-width:220px;overflow:hidden;text-overflow:ellipsis}
-.fsum-path{font-size:.68rem;color:var(--td);margin-top:.1rem;white-space:nowrap;max-width:340px;overflow:hidden;text-overflow:ellipsis}
-.fsum-sev{font-family:var(--mono);font-size:.6rem;font-weight:700;letter-spacing:.8px;padding:.18rem .55rem;border-radius:2px;border:1px solid;white-space:nowrap}
-.fsum-cnt{font-family:var(--mono);font-size:.7rem;color:var(--td);text-align:right;white-space:nowrap}
-.fsum-cnt span{display:inline-block;padding:.1rem .4rem;border-radius:2px;margin-left:.25rem}
-.fsum-mode{font-family:var(--mono);font-size:.58rem;padding:.1rem .45rem;border-radius:2px}
-.fsum-empty{padding:2rem;text-align:center;font-family:var(--mono);font-size:.75rem;color:var(--td)}
-.fsum-copy{font-family:var(--mono);font-size:.75rem;padding:.2rem .5rem;background:transparent;border:1px solid var(--b);color:var(--td);border-radius:3px;cursor:pointer;transition:all .15s;white-space:nowrap;line-height:1}
-.fsum-copy:hover{background:rgba(255,255,255,.06);border-color:rgba(255,255,255,.25);color:var(--t)}
+.fsum-table tr{cursor:pointer}
+.fsum-table tr:hover td{background:var(--s)}
+.fsum-fname{font-family:var(--mono);font-size:.78rem;font-weight:600;white-space:nowrap}
+.fsum-path{font-size:.7rem;color:var(--td);margin-top:.1rem;word-break:break-all}
+.fsum-sev{font-size:.65rem;padding:.15rem .5rem}
+.fsum-cnt{font-family:var(--mono);font-size:.72rem;color:var(--td);text-align:right;white-space:nowrap}
+.fsum-cnt span{display:inline-block;padding:.05rem .4rem;margin-left:.25rem}
+.fsum-empty{padding:2rem;text-align:center;color:var(--td)}
+.fsum-copy{font-family:var(--body);font-size:.75rem;padding:0 .6rem;min-width:36px;min-height:36px;background:transparent;border:1px solid var(--b);color:var(--td);border-radius:3px;cursor:pointer}
+.fsum-copy:hover{color:var(--t);border-color:var(--td)}
 .fsum-table td:last-child{text-align:right;width:1%;white-space:nowrap;padding-right:1rem}
+@media (min-width:900px){.mw{grid-template-columns:260px minmax(0,1fr)}.sb{position:sticky;top:4rem;max-height:calc(100vh - 5rem);overflow-y:auto}}
+@media (max-width:600px){.hdr,.mw,.trs,.fsummary,.note{padding-left:1rem;padding-right:1rem}.fbar{padding:.6rem 1rem}.tbl{width:max-content;min-width:100%}}
+@media (prefers-reduced-motion: no-preference){html{scroll-behavior:smooth}}
 """
 
 
@@ -1767,11 +1772,11 @@ def generate_html_report(all_results, output_path):
         if record.get("status") in ("TAMPERED", "UNTRUSTED_SIGNER")
         or record.get("validation_errors")
     )
-    fg_color = "#ff2d55" if flagged_files else "#00ff9d"
+    fg_color = "var(--critical)" if flagged_files else "var(--clean)"
 
     def sev(r):
         if result_is_incomplete(r):
-            return "high", "INCOMPLETE", "#ff2d55"
+            return "high", "INCOMPLETE", "var(--critical)"
         lsb_sus = bool((r.get("lsb_analysis") or {}).get("suspicious_channels"))
         severity = severity_html(
             r["total_hidden"],
@@ -1780,20 +1785,17 @@ def generate_html_report(all_results, output_path):
             lsb_suspicious=lsb_sus,
         )
         if _watermark_requires_attention(r) and severity[0] in ("clean", "low", "medium"):
-            return "high", "HIGH", "#ff6b35"
+            return "high", "HIGH", "var(--high)"
         return severity
 
     def badge_html(info):
         c = info["color"]
-        return (
-            f'<span class="bdg" style="background:{c}22;color:{c};border-color:{c}44">'
-            f"{info['badge']}</span>"
-        )
+        return f'<span class="bdg" style="--c:{c}">{info["badge"]}</span>'
 
     def finding_block(info, count_label, table_html):
         c = info["color"]
         return (
-            f'<div class="fb" style="border-color:{c}33"><div class="fh" style="background:{c}08">'
+            f'<div class="fb" style="--c:{c}"><div class="fh">'
             f"{badge_html(info)}"
             f'<span class="ftt">{info["title"]}</span>'
             f'<span class="fc">{count_label}</span></div>'
@@ -1816,13 +1818,9 @@ def generate_html_report(all_results, output_path):
         sv_class, sv_label, sv_color = sev(r)
         is_binary = r.get("file_mode") == "binary"
         mode_pill = (
-            '<span style="font-family:var(--mono);font-size:.58rem;padding:1px 6px;margin-left:6px;'
-            + (
-                "background:#ff6b3520;color:#ff6b35;border:1px solid #ff6b3544"
-                if is_binary
-                else "background:#58a6ff20;color:#58a6ff;border:1px solid #58a6ff44"
-            )
-            + ('">' + ("BINARY" if is_binary else "TEXT") + "</span>")
+            '<span class="mode" style="--c:var(--high)">BINARY</span>'
+            if is_binary
+            else '<span class="mode" style="--c:var(--low)">TEXT</span>'
         )
         tw = r["trailing_whitespace_lines"]
         sections = ""
@@ -1833,8 +1831,8 @@ def generate_html_report(all_results, output_path):
             incomplete_errors.extend(watermark_errors)
             incomplete_errors.extend(nested_errors)
             sections = (
-                '<div class="fb" style="border-color:#ff2d55">'
-                '<div class="fh"><span class="bdg" style="color:#ff2d55">INCOMPLETE</span>'
+                '<div class="fb" style="--c:var(--critical)">'
+                '<div class="fh"><span class="bdg">INCOMPLETE</span>'
                 '<span class="ftt">Scan did not complete</span></div><ul class="validation-errors">'
                 + "".join(f"<li>{escape(str(error))}</li>" for error in incomplete_errors)
                 + "</ul></div>"
@@ -1850,13 +1848,13 @@ def generate_html_report(all_results, output_path):
         p_timestamps = provenance.get("timestamps", []) or []
         nested_provenance = nested_provenance_entries(r.get("watermark") or {})
         p_color = {
-            "VALID": "#00ff9d",
-            "TAMPERED": "#ff2d55",
-            "UNTRUSTED_SIGNER": "#ff6b35",
-            "MISSING": "#8b949e",
-            "UNSUPPORTED": "#8b949e",
-            "NOT_CHECKED": "#ffd60a",
-        }.get(p_status, "#ffd60a")
+            "VALID": "var(--clean)",
+            "TAMPERED": "var(--critical)",
+            "UNTRUSTED_SIGNER": "var(--high)",
+            "MISSING": "var(--td)",
+            "UNSUPPORTED": "var(--td)",
+            "NOT_CHECKED": "var(--medium)",
+        }.get(p_status, "var(--medium)")
         claude_label = (
             '<div class="fn">Valid provenance indicates this file was processed by Claude.</div>'
             if p_status == "VALID" and p_provider.lower() == "anthropic"
@@ -1902,10 +1900,10 @@ def generate_html_report(all_results, output_path):
             else ""
         )
         provenance_section = (
-            f'<div class="fb provenance-panel" style="border-color:{p_color}44">'
-            f'<div class="fh"><span class="bdg" style="color:{p_color};border-color:{p_color}44">'
+            f'<div class="fb provenance-panel" style="--c:{p_color}">'
+            f'<div class="fh"><span class="bdg">'
             f'{escape(p_status)}</span><span class="ftt">Content Provenance</span></div>'
-            f'<div style="padding:10px"><div>Provider: {escape(p_provider or "unknown")}</div>'
+            f'<div class="fbody"><div>Provider: {escape(p_provider or "unknown")}</div>'
             f"<div>Signer: {escape(str(provenance.get('signer_identity', '') or 'unknown'))}</div>"
             f"<div>Certificate trust: {escape(str(provenance.get('certificate_trust', 'unknown')))}</div>"
             f"<div>Digital source type: {escape(str(provenance.get('digital_source_type', '') or 'unknown'))}</div>"
@@ -1929,13 +1927,13 @@ def generate_html_report(all_results, output_path):
                 for grp, gc, gb, gt in [
                     (
                         [h for h in hits if h.cat == "ZWC"],
-                        "#ffd60a",
+                        "var(--medium)",
                         "ZWC",
                         "Zero-Width Sequences in Binary",
                     ),
                     (
                         [h for h in hits if h.cat == "BIDI"],
-                        "#ff6b35",
+                        "var(--high)",
                         "BIDI",
                         "BIDI/Control Sequences in Binary",
                     ),
@@ -1947,15 +1945,14 @@ def generate_html_report(all_results, output_path):
                         f'<td><span class="off">0x{h.byte_off:08X}</span></td>'
                         f"<td><code>U+{ord(h.char):04X}</code></td>"
                         f"<td>{h.name}</td>"
-                        f'<td style="font-family:var(--mono);font-size:.7rem;'
-                        f'color:var(--td);word-break:break-all">{h.context}</td>'
+                        f'<td class="ctx">{escape(str(h.context))}</td>'
                         f"</tr>"
                         for h in grp
                     )
                     sections += (
-                        f'<div class="fb" style="border-color:{gc}33">'
-                        f'<div class="fh" style="background:{gc}08">'
-                        f'<span class="bdg" style="background:{gc}22;color:{gc};border-color:{gc}44">{gb}</span>'
+                        f'<div class="fb" style="--c:{gc}">'
+                        f'<div class="fh">'
+                        f'<span class="bdg">{gb}</span>'
                         f'<span class="ftt">{gt}</span>'
                         f'<span class="fc">{len(grp)} found in raw bytes</span></div>'
                         f'<table class="tbl"><thead><tr>'
@@ -1972,19 +1969,19 @@ def generate_html_report(all_results, output_path):
                 dims = lsb.get("dimensions", (0, 0))
                 fmt = lsb.get("fmt") or lsb.get("format", "")
                 lc = (
-                    "#ff2d55"
+                    "var(--critical)"
                     if verdict == "LIKELY_STEGO"
-                    else ("#ffd60a" if verdict == "SUSPICIOUS" else "#00ff9d")
+                    else ("var(--medium)" if verdict == "SUSPICIOUS" else "var(--clean)")
                 )
                 inner = (
-                    f'<div style="font-size:.8rem;margin-bottom:6px">'
-                    f'<strong style="color:{lc}">LSB verdict: {verdict}</strong>'
-                    f'&ensp;<span style="color:var(--td)">confidence: {conf:.0%}'
+                    f"<div>"
+                    f'<strong class="tone" style="--c:{lc}">LSB verdict: {verdict}</strong>'
+                    f'&ensp;<span class="muted">confidence: {conf:.0%}'
                     f" &ensp; {fmt} {dims[0]}×{dims[1]}</span></div>"
                 )
                 if sus_chs:
                     inner += (
-                        f'<div style="font-size:.75rem;color:#ffd60a">Suspicious channel(s): '
+                        f'<div class="tone" style="--c:var(--medium)">Suspicious channel(s): '
                         f"{', '.join(sus_chs)}</div>"
                     )
                 # Per-channel stats table
@@ -2015,32 +2012,26 @@ def generate_html_report(all_results, output_path):
                             f"</tr>"
                         )
                     inner += (
-                        f'<table class="tbl" style="margin-top:8px"><thead><tr>'
+                        f'<table class="tbl spaced"><thead><tr>'
                         f"<th>Channel</th><th>Chi-square (p)</th>"
                         f"<th>RS estimate</th><th>SP estimate</th>"
                         f"<th>LSB entropy</th></tr></thead>"
                         f"<tbody>{rows}</tbody></table>"
                     )
-                gc = "#ff2d5533" if verdict == "LIKELY_STEGO" else "#ffd60a33"
                 lsb_section = (
-                    f'<div class="fb" style="border-color:{gc}">'
-                    f'<div class="fh" style="background:{gc}">'
-                    f'<span class="bdg" style="background:{lc}22;color:{lc};'
-                    f'border-color:{lc}44">LSB</span>'
+                    f'<div class="fb" style="--c:{lc}">'
+                    f'<div class="fh"><span class="bdg">LSB</span>'
                     f'<span class="ftt">Pixel-level LSB Steganalysis</span>'
-                    f'</div><div style="padding:10px">{inner}</div></div>'
+                    f'</div><div class="fbody">{inner}</div></div>'
                 )
             elif lsb and lsb.get("error"):
-                lsb_section = (
-                    f'<div style="color:var(--td);font-size:.75rem;padding:4px 0">'
-                    f"LSB analysis: {lsb['error']}</div>"
-                )
+                lsb_section = f'<div class="muted">LSB analysis: {lsb["error"]}</div>'
 
             return (
                 f'<div class="card" id="f{abs(hash(fp))}" data-sev="{sv_class}">'
-                f'<div class="ch"><div class="cm"><span class="ci">&#x1F4C4;</span>'
-                f'<div><div class="cn">{fname}{mode_pill}</div><div class="cp">{fp}</div></div></div>'
-                f'<div class="sv sev-{sv_class}" style="color:{sv_color};border-color:{sv_color}44;background:{sv_color}11">{sv_label}</div>'
+                f'<div class="ch"><div class="cm">'
+                f'<div class="cn">{escape(fname)}{mode_pill}</div><div class="cp">{escape(fp)}</div></div>'
+                f'<div class="sv sev-{sv_class}" style="--c:{sv_color}">{sv_label}</div>'
                 f'</div><div class="cb">{sections}{lsb_section}{watermark_section}{provenance_section}</div></div>'
             )
 
@@ -2139,9 +2130,8 @@ def generate_html_report(all_results, output_path):
         return (
             f'<div class="card" id="f{abs(hash(fp))}" data-sev="{sv_class}">'
             f'<div class="ch"><div class="cm">'
-            f'<span class="ci">&#x1F4C4;</span>'
-            f'<div><div class="cn">{fname}{mode_pill}</div><div class="cp">{fp}</div></div></div>'
-            f'<div class="sv sev-{sv_class}" style="color:{sv_color};border-color:{sv_color}44;background:{sv_color}11">{sv_label}</div>'
+            f'<div class="cn">{escape(fname)}{mode_pill}</div><div class="cp">{escape(fp)}</div></div>'
+            f'<div class="sv sev-{sv_class}" style="--c:{sv_color}">{sv_label}</div>'
             f'</div><div class="cb">{sections}</div></div>'
         )
 
@@ -2150,9 +2140,9 @@ def generate_html_report(all_results, output_path):
         for info in THREAT_INFO.values():
             risks_html = "".join(f"<li><strong>{r[0]}:</strong> {r[1]}</li>" for r in info["risks"])
             cards += (
-                f'<div class="rc">'
-                f'<div class="rh" style="border-left:3px solid {info["color"]}">'
-                f'<span class="rb" style="color:{info["color"]}">{info["badge"]}</span>'
+                f'<div class="rc" style="--c:{info["color"]}">'
+                f'<div class="rh">'
+                f'<span class="rb">{info["badge"]}</span>'
                 f'<span class="rt">{info["title"]}</span></div>'
                 f'<p class="rw">{info["what"]}</p>'
                 f'<ul class="rl">{risks_html}</ul>'
@@ -2167,8 +2157,8 @@ def generate_html_report(all_results, output_path):
         name = P(r["file"]).name
         return (
             f'<a class="ni" href="#f{file_id}" data-sev="{sv_class}">'
-            f'<span class="nl">{name}</span>'
-            f'<span class="nb" style="color:{sv_color};border-color:{sv_color}44">{sv_label}</span></a>'
+            f'<span class="nl">{escape(name)}</span>'
+            f'<span class="nb" style="--c:{sv_color}">{sv_label}</span></a>'
         )
 
     nav = "".join(nav_item(r) for r in all_results)
@@ -2178,50 +2168,48 @@ def generate_html_report(all_results, output_path):
     html_parts = [
         '<!DOCTYPE html><html lang="en"><head>',
         '<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">',
-        f"<title>Steg Detector Report -- {now}</title>",
-        '<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono'
-        '&family=Rajdhani:wght@400;500;600;700&display=swap" rel="stylesheet">',
+        f"<title>StegGuard report · {now}</title>",
         f"<style>{REPORT_CSS}</style></head><body>",
         '<header class="hdr"><div class="ht">',
-        '<div class="lg"><div class="li">SD</div><div>',
-        "<h1>STEG <span>DETECTOR</span></h1>",
-        '<div class="hs">Unicode Steganography and Hidden Character Analysis Report</div>',
-        "</div></div>",
+        "<div><h1>StegGuard report</h1>",
+        '<div class="hs">Hidden characters, steganography and watermark signals</div>',
+        "</div>",
         f'<div class="sm"><div>Scan time: <strong>{now}</strong></div>',
         f"<div>Files scanned: <strong>{total_files}</strong></div>",
-        f'<div>Files flagged: <strong style="color:{fg_color}">{flagged_files}</strong></div>',
-        f'<div>Incomplete: <strong style="color:#ff2d55">{incomplete_files}</strong></div>',
+        f'<div>Files flagged: <strong class="tone" style="--c:{fg_color}">{flagged_files}</strong></div>',
+        f'<div>Incomplete: <strong class="tone" style="--c:var(--critical)">{incomplete_files}</strong></div>',
         "</div></div></header>",
         '<div class="sg">',
-        f'<div class="sc" style="--ac:#ff2d55"><div class="sn">{flagged_files}</div><div class="sl">Flagged Files</div><div class="ss">of {total_files} scanned</div></div>',
-        f'<div class="sc" style="--ac:#ff2d55"><div class="sn">{incomplete_files}</div><div class="sl">Incomplete Files</div><div class="ss">not counted as clean</div></div>',
-        f'<div class="sc" style="--ac:#ffd60a"><div class="sn">{zw_total}</div><div class="sl">Zero-Width</div><div class="ss">invisible unicode</div></div>',
-        f'<div class="sc" style="--ac:#ff2d55"><div class="sn">{hg_total}</div><div class="sl">Homoglyphs</div><div class="ss">lookalike chars</div></div>',
-        f'<div class="sc" style="--ac:#ff6b35"><div class="sn">{os_total}</div><div class="sl">BIDI / Control</div><div class="ss">directional overrides</div></div>',
-        f'<div class="sc" style="--ac:#e040fb"><div class="sn">{lsb_total}</div><div class="sl">LSB Pixel Steg</div><div class="ss">image steganalysis</div></div>',
-        f'<div class="sc" style="--ac:#00b4d8"><div class="sn">{tw_total}</div><div class="sl">Trailing Space</div><div class="ss">potential SNOW steg</div></div>',
-        f'<div class="sc" style="--ac:#9b5de5"><div class="sn">{ml_total}</div><div class="sl">Mixed Endings</div><div class="ss">LF / CRLF mixed</div></div>',
-        f'<div class="sc" style="--ac:#00ff9d"><div class="sn">{total_threats}</div><div class="sl">Total Threats</div><div class="ss">chars flagged</div></div>',
-        f'<div class="sc" style="--ac:#00ff9d"><div class="sn">{provenance_valid}</div><div class="sl">Provenance Valid</div><div class="ss">validated manifests</div></div>',
-        f'<div class="sc" style="--ac:#ff2d55"><div class="sn">{provenance_failures}</div><div class="sl">Validation Failures</div><div class="ss">tampered, untrusted, or unchecked errors</div></div>',
+        f'<div class="sc" style="--c:var(--critical)"><div class="sn">{flagged_files}</div><div class="sl">Flagged Files</div><div class="ss">of {total_files} scanned</div></div>',
+        f'<div class="sc" style="--c:var(--critical)"><div class="sn">{incomplete_files}</div><div class="sl">Incomplete Files</div><div class="ss">not counted as clean</div></div>',
+        f'<div class="sc" style="--c:var(--medium)"><div class="sn">{zw_total}</div><div class="sl">Zero-Width</div><div class="ss">invisible unicode</div></div>',
+        f'<div class="sc" style="--c:var(--critical)"><div class="sn">{hg_total}</div><div class="sl">Homoglyphs</div><div class="ss">lookalike chars</div></div>',
+        f'<div class="sc" style="--c:var(--high)"><div class="sn">{os_total}</div><div class="sl">BIDI / Control</div><div class="ss">directional overrides</div></div>',
+        f'<div class="sc" style="--c:var(--lsb)"><div class="sn">{lsb_total}</div><div class="sl">LSB Pixel Steg</div><div class="ss">image steganalysis</div></div>',
+        f'<div class="sc" style="--c:var(--low)"><div class="sn">{tw_total}</div><div class="sl">Trailing Space</div><div class="ss">potential SNOW steg</div></div>',
+        f'<div class="sc" style="--c:var(--eol)"><div class="sn">{ml_total}</div><div class="sl">Mixed Endings</div><div class="ss">LF / CRLF mixed</div></div>',
+        f'<div class="sc" style="--c:var(--accent)"><div class="sn">{total_threats}</div><div class="sl">Total Threats</div><div class="ss">chars flagged</div></div>',
+        f'<div class="sc" style="--c:var(--clean)"><div class="sn">{provenance_valid}</div><div class="sl">Provenance Valid</div><div class="ss">validated manifests</div></div>',
+        f'<div class="sc" style="--c:var(--critical)"><div class="sn">{provenance_failures}</div><div class="sl">Validation Failures</div><div class="ss">tampered, untrusted, or unchecked errors</div></div>',
         "</div>",
-        '<div class="fn" style="margin:12px">A missing mark does not prove human authorship or exclude AI processing.</div>',
+        '<p class="note">A missing mark does not prove human authorship or exclude AI processing.</p>',
         # ── Severity filter bar — full width, outside the grid ─────────────────
         '<div class="fbar">',
         '<span class="fbar-label">Filter by severity</span>',
         '<div class="fbar-btns">',
         '<button class="fbtn" data-sev="all">ALL</button>',
-        '<button class="fbtn" data-sev="critical" style="--fc:#ff2d55">CRITICAL</button>',
-        '<button class="fbtn" data-sev="high"     style="--fc:#ff6b35">HIGH</button>',
-        '<button class="fbtn" data-sev="medium"   style="--fc:#ffd60a">MEDIUM</button>',
-        '<button class="fbtn" data-sev="low"      style="--fc:#00b4d8">LOW</button>',
-        '<button class="fbtn" data-sev="clean"    style="--fc:#00ff9d">CLEAN</button>',
+        '<button class="fbtn" data-sev="critical" style="--c:var(--critical)">CRITICAL</button>',
+        '<button class="fbtn" data-sev="high"     style="--c:var(--high)">HIGH</button>',
+        '<button class="fbtn" data-sev="medium"   style="--c:var(--medium)">MEDIUM</button>',
+        '<button class="fbtn" data-sev="low"      style="--c:var(--low)">LOW</button>',
+        '<button class="fbtn" data-sev="clean"    style="--c:var(--clean)">CLEAN</button>',
         "</div>",
         '<span class="fbar-count" id="filter-count"></span>',
         "</div>",
         # ── Embedded file metadata for JS summary panel ─────────────────────────
         '<script id="file-data" type="application/json">',
-        __import__("json").dumps(
+        __import__("json")
+        .dumps(
             [
                 (
                     lambda sv_class, sv_label, sv_color: {
@@ -2243,7 +2231,8 @@ def generate_html_report(all_results, output_path):
                 for r in all_results
             ],
             ensure_ascii=False,
-        ),
+        )
+        .replace("<", "\\u003c"),
         "</script>",
         # ── Summary panel (populated by JS) ────────────────────────────────────
         '<div class="fsummary"><div class="fsummary-inner">',
@@ -2258,35 +2247,35 @@ def generate_html_report(all_results, output_path):
         '<aside class="sb">',
         f'<div class="sbx"><div class="sbt">Scanned Files</div>{nav}</div>',
         '<div class="sbx"><div class="sbt">Severity Legend</div>',
-        '<div class="leg"><div class="ld" style="background:#00ff9d"></div>CLEAN -- no issues</div>',
-        '<div class="leg"><div class="ld" style="background:#00b4d8"></div>LOW -- minor signals</div>',
-        '<div class="leg"><div class="ld" style="background:#ffd60a"></div>MEDIUM -- investigate</div>',
-        '<div class="leg"><div class="ld" style="background:#ff6b35"></div>HIGH -- likely malicious</div>',
-        '<div class="leg"><div class="ld" style="background:#ff2d55"></div>CRITICAL -- Trojan/backdoor</div>',
+        '<div class="leg"><div class="ld" style="--c:var(--clean)"></div>CLEAN -- no issues</div>',
+        '<div class="leg"><div class="ld" style="--c:var(--low)"></div>LOW -- minor signals</div>',
+        '<div class="leg"><div class="ld" style="--c:var(--medium)"></div>MEDIUM -- investigate</div>',
+        '<div class="leg"><div class="ld" style="--c:var(--high)"></div>HIGH -- likely malicious</div>',
+        '<div class="leg"><div class="ld" style="--c:var(--critical)"></div>CRITICAL -- Trojan/backdoor</div>',
         "</div>",
         '<div class="sbx"><div class="sbt">Threat Types</div>',
-        '<div class="leg"><div class="ld" style="background:#ffd60a"></div>ZWC -- Zero-Width Chars</div>',
-        '<div class="leg"><div class="ld" style="background:#ff2d55"></div>HGL -- Homoglyphs</div>',
-        '<div class="leg"><div class="ld" style="background:#ff6b35"></div>BIDI -- Directional Overrides</div>',
-        '<div class="leg"><div class="ld" style="background:#e040fb"></div>LSB -- Pixel Steganography</div>',
-        '<div class="leg"><div class="ld" style="background:#00b4d8"></div>SPC -- Trailing Whitespace</div>',
-        '<div class="leg"><div class="ld" style="background:#9b5de5"></div>EOL -- Mixed Line Endings</div>',
+        '<div class="leg"><div class="ld" style="--c:var(--medium)"></div>ZWC -- Zero-Width Chars</div>',
+        '<div class="leg"><div class="ld" style="--c:var(--critical)"></div>HGL -- Homoglyphs</div>',
+        '<div class="leg"><div class="ld" style="--c:var(--high)"></div>BIDI -- Directional Overrides</div>',
+        '<div class="leg"><div class="ld" style="--c:var(--lsb)"></div>LSB -- Pixel Steganography</div>',
+        '<div class="leg"><div class="ld" style="--c:var(--low)"></div>SPC -- Trailing Whitespace</div>',
+        '<div class="leg"><div class="ld" style="--c:var(--eol)"></div>EOL -- Mixed Line Endings</div>',
         "</div>",
         "</aside>",
         f'<main><div class="fl2">{file_cards}<div id="filter-empty"></div></div></main>',
         "</div>",
         '<div class="trs"><div class="sh">Threat Reference -- Attack Techniques and Remediation</div>',
         f'<div class="rg">{ref_section()}</div></div>',
-        f'<footer class="ftr">STEG DETECTOR &nbsp;|&nbsp; Generated {now} &nbsp;|&nbsp; '
+        f'<footer class="ftr">StegGuard &nbsp;|&nbsp; Generated {now} &nbsp;|&nbsp; '
         f"{total_files} files scanned &nbsp;|&nbsp; {total_threats} threats found</footer>",
         # ── Filter + Summary JS ─────────────────────────────────────────────────
         "<script>\n(function () {\n"
         "  var SEV_COLORS = {\n"
-        "    clean:    '#00ff9d',\n"
-        "    low:      '#00b4d8',\n"
-        "    medium:   '#ffd60a',\n"
-        "    high:     '#ff6b35',\n"
-        "    critical: '#ff2d55'\n"
+        "    clean:    'var(--clean)',\n"
+        "    low:      'var(--low)',\n"
+        "    medium:   'var(--medium)',\n"
+        "    high:     'var(--high)',\n"
+        "    critical: 'var(--critical)'\n"
         "  };\n"
         "\n"
         "  var fileData = JSON.parse(document.getElementById('file-data').textContent);\n"
@@ -2325,8 +2314,8 @@ def generate_html_report(all_results, output_path):
         "      navigator.clipboard.writeText(path).then(function () {\n"
         "        var orig = btn.innerHTML;\n"
         "        btn.innerHTML = '&#10003;';\n"
-        "        btn.style.color = '#00ff9d';\n"
-        "        btn.style.borderColor = '#00ff9d44';\n"
+        "        btn.style.color = 'var(--clean)';\n"
+        "        btn.style.borderColor = 'var(--clean)';\n"
         "        setTimeout(function () {\n"
         "          btn.innerHTML = orig;\n"
         "          btn.style.color = '';\n"
@@ -2339,8 +2328,8 @@ def generate_html_report(all_results, output_path):
         "        document.body.appendChild(ta); ta.select();\n"
         "        document.execCommand('copy');\n"
         "        document.body.removeChild(ta);\n"
-        "        btn.innerHTML = '&#10003;'; btn.style.color = '#00ff9d';\n"
-        "        setTimeout(function () { btn.innerHTML = '&#x2398;'; btn.style.color = ''; }, 1400);\n"
+        "        btn.innerHTML = '&#10003;'; btn.style.color = 'var(--clean)';\n"
+        "        setTimeout(function () { btn.innerHTML = 'Copy'; btn.style.color = ''; }, 1400);\n"
         "      });\n"
         "      return;\n"
         "    }\n"
@@ -2357,25 +2346,25 @@ def generate_html_report(all_results, output_path):
         "      return;\n"
         "    }\n"
         "    var rows = matched.map(function (f) {\n"
-        "      var c = SEV_COLORS[f.sev] || '#c9d1d9';\n"
+        "      var c = SEV_COLORS[f.sev] || 'var(--td)';\n"
         "      var modePill = f.mode === 'binary'\n"
-        '        ? \'<span class="fsum-mode" style="background:#ff6b3520;color:#ff6b35;border:1px solid #ff6b3540">BINARY</span>\'\n'
-        '        : \'<span class="fsum-mode" style="background:#58a6ff20;color:#58a6ff;border:1px solid #58a6ff40">TEXT</span>\';\n'
+        '        ? \'<span class="mode" style="--c:var(--high)">BINARY</span>\'\n'
+        '        : \'<span class="mode" style="--c:var(--low)">TEXT</span>\';\n'
         "      var counts = '';\n"
         "      if (f.mode === 'binary' && f.bin > 0) {\n"
-        "        counts += '<span style=\"background:rgba(255,214,10,.1);color:#ffd60a\">BIN\\u00a0' + f.bin + '</span>';\n"
+        "        counts += '<span style=\"--c:var(--medium)\">BIN\\u00a0' + f.bin + '</span>';\n"
         "      } else {\n"
-        "        if (f.zw   > 0) counts += '<span style=\"background:rgba(255,214,10,.1);color:#ffd60a\">ZWC\\u00a0' + f.zw   + '</span>';\n"
-        "        if (f.hg   > 0) counts += '<span style=\"background:rgba(255,45,85,.1);color:#ff2d55\">HGL\\u00a0'  + f.hg   + '</span>';\n"
-        "        if (f.bidi > 0) counts += '<span style=\"background:rgba(255,107,53,.1);color:#ff6b35\">BIDI\\u00a0' + f.bidi + '</span>';\n"
-        "        if (f.tw   > 0) counts += '<span style=\"background:rgba(0,180,216,.1);color:#00b4d8\">SPC\\u00a0'  + f.tw   + '</span>';\n"
+        "        if (f.zw   > 0) counts += '<span style=\"--c:var(--medium)\">ZWC\\u00a0' + f.zw   + '</span>';\n"
+        "        if (f.hg   > 0) counts += '<span style=\"--c:var(--critical)\">HGL\\u00a0'  + f.hg   + '</span>';\n"
+        "        if (f.bidi > 0) counts += '<span style=\"--c:var(--high)\">BIDI\\u00a0' + f.bidi + '</span>';\n"
+        "        if (f.tw   > 0) counts += '<span style=\"--c:var(--low)\">SPC\\u00a0'  + f.tw   + '</span>';\n"
         "      }\n"
-        "      if (!counts) counts = '<span style=\"color:var(--td)\">&mdash;</span>';\n"
-        '      var copyBtn = \'<button class="fsum-copy" data-path="\' + esc(f.file) + \'" title="Copy path">&#x2398;</button>\';\n'
+        "      if (!counts) counts = 'none';\n"
+        '      var copyBtn = \'<button class="fsum-copy" data-path="\' + esc(f.file) + \'" title="Copy path">Copy</button>\';\n'
         "      return '<tr data-target=\"' + esc(f.id) + '\" style=\"cursor:pointer\">'\n"
         "        + '<td><div class=\"fsum-fname\">' + esc(f.name) + '&nbsp;' + modePill + '</div>'\n"
         "        +     '<div class=\"fsum-path\">'  + esc(f.file) + '</div></td>'\n"
-        "        + '<td><span class=\"fsum-sev\" style=\"color:' + c + ';border-color:' + c + '44;background:' + c + '18\">'\n"
+        "        + '<td><span class=\"fsum-sev\" style=\"--c:' + c + '\">'\n"
         "        +   esc(f.sevLabel) + '</span></td>'\n"
         "        + '<td><div class=\"fsum-cnt\">' + counts + '</div></td>'\n"
         "        + '<td>' + copyBtn + '</td>'\n"
@@ -2410,7 +2399,7 @@ def generate_html_report(all_results, output_path):
         "      return sd !== 0 ? sd : b.total - a.total;\n"
         "    });\n"
         "    sumTitle.textContent = isAll ? 'All Scanned Files'\n"
-        "      : 'Files \\u2014 ' + Array.from(active).map(function(s){return s.toUpperCase();}).join(' + ');\n"
+        "      : 'Files: ' + Array.from(active).map(function(s){return s.toUpperCase();}).join(' + ');\n"
         "    sumMeta.textContent = matched.length + ' file' + (matched.length !== 1 ? 's' : '');\n"
         "    buildSummary(matched);\n"
         "  }\n"
@@ -2562,7 +2551,17 @@ def _load_pixels_pil(path: Path, limits: ScanLimits | None = None):
             fmt = img.format or "UNKNOWN"
             mode = img.mode
             w, h = img.size
-            validate_image_size(w, h, limits or resolve_limits(None))
+            policy = limits or resolve_limits(None)
+            validate_image_size(w, h, policy)
+            # Unsupported modes are converted to RGB below, so they decode to 3+ bytes/pixel.
+            bands = len(img.getbands())
+            if mode not in ("P", "L", "RGB", "RGBA", "LA"):
+                bands = max(bands, 3)
+            if w * h * bands > policy.max_decompressed_bytes:
+                raise ResourceLimitError(
+                    "max_decompressed_bytes exceeded: output is larger than "
+                    f"{policy.max_decompressed_bytes}"
+                )
 
             if mode == "P":  # palette-indexed
                 palette = list(img.getpalette())  # flat [R,G,B, ...]
@@ -3518,6 +3517,7 @@ def collect_files(root: Path, extensions: set, recursive: bool, skip_venvs: bool
 
 
 def main(argv: list[str] | None = None) -> int:
+    use_utf8_output()
     parser = argparse.ArgumentParser(
         prog="stegguard detect",
         description="Detect hidden steganographic characters across all supported file types",

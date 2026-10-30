@@ -9,12 +9,12 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_distribution_declares_apache_2_consistently():
-    metadata = tomllib.loads((PROJECT_ROOT / "pyproject.toml").read_text())
+    metadata = tomllib.loads((PROJECT_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
 
     assert metadata["project"]["license"] == "Apache-2.0"
     assert metadata["project"]["license-files"] == ["LICENSE", "NOTICE"]
     assert stegguard.__license__ == "Apache-2.0"
-    license_text = (PROJECT_ROOT / "LICENSE").read_text()
+    license_text = (PROJECT_ROOT / "LICENSE").read_text(encoding="utf-8")
     assert "Apache License" in license_text
     assert "Version 2.0, January 2004" in license_text
 
@@ -32,7 +32,7 @@ def test_distributed_python_sources_have_no_conflicting_license_notice():
         path.relative_to(PROJECT_ROOT).as_posix(): term
         for path in python_files
         for term in conflicting_terms
-        if term in path.read_text()
+        if term in path.read_text(encoding="utf-8")
     }
 
     assert conflicts == {}

@@ -73,6 +73,7 @@ def _run_cli(*arguments: str) -> subprocess.CompletedProcess[str]:
         [sys.executable, "-m", "stegguard", *arguments],
         cwd=PROJECT_ROOT,
         text=True,
+        encoding="utf-8",
         capture_output=True,
         check=False,
         timeout=30,
@@ -176,6 +177,27 @@ def test_lsb_scan_uses_bounded_png_decompression(tmp_path):
     result = analyze_lsb_image(source, limits={"max_decompressed_bytes": 4})
 
     assert "max_decompressed_bytes" in result["error"]
+
+
+def test_lsb_scan_decodes_png_within_the_decompression_budget(tmp_path):
+    source = tmp_path / "compressed.png"
+    source.write_bytes(_png(2, 2, b"\x00" + b"\x00" * 6 + b"\x00" + b"\x00" * 6))
+
+    result = analyze_lsb_image(source, limits={"max_decompressed_bytes": 14})
+
+    assert result["error"] is None
+    assert result["dimensions"] == (2, 2)
+
+
+def test_pillow_lsb_scan_reports_the_decompression_budget_it_exceeded(tmp_path):
+    pytest.importorskip("PIL")
+    source = tmp_path / "compressed.png"
+    source.write_bytes(_png(2, 2, b"\x00" + b"\x00" * 6 + b"\x00" + b"\x00" * 6))
+
+    result = analyze_lsb_image(source, limits={"max_decompressed_bytes": 11})
+
+    assert result["error"] == "max_decompressed_bytes exceeded: output is larger than 11"
+    assert result["verdict"] == "UNKNOWN"
 
 
 def test_nested_archive_honors_member_and_total_byte_limits(tmp_path):

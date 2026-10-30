@@ -7,6 +7,8 @@ import re
 import tomllib
 from pathlib import Path
 
+from stegguard import __version__
+
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
@@ -95,11 +97,20 @@ def test_project_metadata_names_people_and_repository_resources():
         assert metadata["urls"][label].startswith("https://github.com/stegguard/stegguard")
 
 
-def test_project_urls_do_not_link_to_the_untracked_changelog():
+def test_project_urls_do_not_include_a_changelog_link():
     metadata = tomllib.loads(_read("pyproject.toml"))["project"]
 
     assert "Changelog" not in metadata["urls"]
     assert not any("CHANGELOG.md" in url for url in metadata["urls"].values())
+
+
+def test_changelog_lists_unreleased_changes_above_the_current_version():
+    changelog = _read("CHANGELOG.md")
+    headings = re.findall(r"^## (.+)$", changelog, re.M)
+
+    assert changelog.startswith("# Changelog\n")
+    assert headings[0] == "Unreleased"
+    assert __version__ in headings[1:]
 
 
 def test_pillow_behavior_is_an_explicit_optional_extra():

@@ -143,3 +143,67 @@ def test_report_tables_size_to_content_and_scroll_on_small_screens(tmp_path):
 
     assert ".tbl{width:max-content;min-width:100%" in small
     assert re.search(r"\.fb\{[^}]*overflow-x:auto", css)
+
+
+def _body_hex_colors(html: str) -> list[str]:
+    return re.findall(r"[:'\"]\s*#[0-9a-fA-F]{6}\b", _without_style(html))
+
+
+def _report_for_results(tmp_path, results: list[dict]) -> str:
+    out = tmp_path / "report.html"
+    detector.generate_html_report(results, str(out))
+    return out.read_text(encoding="utf-8")
+
+
+def test_incomplete_results_render_with_theme_tokens_only(tmp_path):
+    source = tmp_path / "a.py"
+    source.write_text("x\n", encoding="utf-8")
+    result = detector.analyze_file(source)
+    result["error"] = "scan budget exceeded"
+
+    html = _report_for_results(tmp_path, [result])
+
+    assert _body_hex_colors(html) == []
+    assert '<div class="sv sev-high" style="--c:var(--critical)">INCOMPLETE</div>' in html
+    assert (
+        '<div class="fb" style="--c:var(--critical)"><div class="fh">'
+        '<span class="bdg">INCOMPLETE</span>'
+    ) in html
+    assert "<li>scan budget exceeded</li>" in html
+
+
+def test_binary_results_render_with_theme_tokens_only(tmp_path):
+    source = tmp_path / "payload.bin"
+    source.write_bytes(b"\x00\x01" + "​‌".encode() * 5 + b"\x02")
+    result = detector.analyze_file(source)
+
+    html = _report_for_results(tmp_path, [result])
+
+    assert result["file_mode"] == "binary"
+    assert _body_hex_colors(html) == []
+    assert '<span class="mode" style="--c:var(--high)">BINARY</span>' in html
+
+
+def test_watermark_and_provenance_results_render_with_theme_tokens_only(tmp_path):
+    source = tmp_path / "a.py"
+    source.write_text("x\n", encoding="utf-8")
+    result = detector.analyze_file(source)
+    result["watermark"] = {
+        "findings": [
+            {
+                "category": "ai_text_watermark",
+                "detector": "synthetic",
+                "description": "test finding",
+                "risk": "high",
+                "confidence": 0.9,
+            }
+        ],
+        "provenance": {"status": "TAMPERED", "provider": "example"},
+    }
+
+    html = _report_for_results(tmp_path, [result])
+
+    assert _body_hex_colors(html) == []
+    assert '<div class="sv sev-high" style="--c:var(--high)">HIGH</div>' in html
+    assert '<div class="fb provenance-panel" style="--c:var(--critical)">' in html
+    assert '<div class="fb watermark-findings">' in html

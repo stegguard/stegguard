@@ -9,6 +9,14 @@ the Python API, CLI contract, and versioned report schema.
 
 - CI now tests Python 3.13 and 3.14 on Windows and macOS, in addition to Linux.
 
+### Fixed
+
+- `detect` no longer reports a container as clean when a nested member has an
+  actionable watermark or provenance finding, or when a scan stopped early at a
+  nested level. These containers now exit `1` or `2`, count as flagged or
+  incomplete, and name the member path in terminal and HTML output, so scans
+  that previously passed may now fail.
+
 ## 0.4.0
 
 ### Added

@@ -661,6 +661,11 @@ def attempt_decode_zero_width(occurrences: list) -> str:
     return ""
 
 
+def _printable(text: str) -> str:
+    """Stop names taken from scanned containers from driving the terminal."""
+    return "".join(char if char.isprintable() else "?" for char in text)
+
+
 def print_results(results: dict, verbose: bool = False, decode: bool = False):
     filepath = results["file"]
     total = results["total_hidden"]
@@ -669,14 +674,16 @@ def print_results(results: dict, verbose: bool = False, decode: bool = False):
         print(color(f"  ERROR: {results['error']}", RED))
         return
     watermark = results.get("watermark") or {}
-    partial_errors = [
-        *watermark.get("scan_errors", []),
-        *watermark.get("nested_scan_errors", []),
-    ]
+    partial_errors = watermark_scan_errors(watermark)
     if partial_errors:
         print(color("  INCOMPLETE: one or more scan stages stopped early", RED, BOLD))
         for error in partial_errors:
-            print(color(f"    {error}", RED))
+            print(color(f"    {_printable(error)}", RED))
+    attention_items = _watermark_attention_items(watermark)
+    if attention_items:
+        print(color("  ⚠ Watermark or provenance findings need attention:", YELLOW, BOLD))
+        for item in attention_items:
+            print(color(f"    {_printable(item)}", YELLOW))
 
     # ── Binary scan branch ───────────────────────────────────────────────
     if results.get("file_mode") == "binary":
@@ -1282,16 +1289,48 @@ def severity_html(total_hidden, tw, mixed, lsb_suspicious: bool = False):
     return "low", "LOW", "var(--low)"
 
 
+def _iter_watermark_tree(watermark: dict, member_path: str = ""):
+    """Yield (member path, watermark result) for a result and everything nested in it."""
+    yield member_path, watermark
+    for item in watermark.get("nested_results") or []:
+        nested = item.get("result") if isinstance(item, dict) else None
+        if isinstance(nested, dict):
+            path = str(item.get("path", "nested asset"))
+            yield from _iter_watermark_tree(
+                nested, f"{member_path} > {path}" if member_path else path
+            )
+
+
+def _at_member(member_path: str, text: str) -> str:
+    return f"{member_path}: {text}" if member_path else text
+
+
+def watermark_scan_errors(watermark: dict) -> list[str]:
+    """Return scan errors from every nesting level, labeled with their member path."""
+    return [
+        _at_member(member_path, str(error))
+        for member_path, node in _iter_watermark_tree(watermark)
+        for error in [*(node.get("scan_errors") or []), *(node.get("nested_scan_errors") or [])]
+    ]
+
+
+def _watermark_attention_items(watermark: dict) -> list[str]:
+    """Describe actionable findings from every nesting level, with their member path."""
+    items = []
+    for member_path, node in _iter_watermark_tree(watermark):
+        status = (node.get("provenance") or {}).get("status")
+        if status in ("TAMPERED", "UNTRUSTED_SIGNER"):
+            items.append(_at_member(member_path, f"provenance {status}"))
+        items.extend(
+            _at_member(member_path, f"{finding.get('category', '')} ({finding.get('risk')})")
+            for finding in node.get("findings") or []
+            if isinstance(finding, dict) and finding.get("risk") not in (None, "informational")
+        )
+    return items
+
+
 def _watermark_requires_attention(result: dict) -> bool:
-    watermark = result.get("watermark") or {}
-    provenance = watermark.get("provenance") or {}
-    if provenance.get("status") in ("TAMPERED", "UNTRUSTED_SIGNER"):
-        return True
-    return any(
-        finding.get("risk") not in (None, "informational")
-        for finding in watermark.get("findings", [])
-        if isinstance(finding, dict)
-    )
+    return bool(_watermark_attention_items(result.get("watermark") or {}))
 
 
 def result_is_flagged(result: dict) -> bool:
@@ -1307,10 +1346,7 @@ def result_is_flagged(result: dict) -> bool:
 
 def result_is_incomplete(result: dict) -> bool:
     """Return whether any stage failed or stopped before a conclusive scan."""
-    watermark = result.get("watermark") or {}
-    return bool(
-        result.get("error") or watermark.get("scan_errors") or watermark.get("nested_scan_errors")
-    )
+    return bool(result.get("error") or watermark_scan_errors(result.get("watermark") or {}))
 
 
 def scan_exit_code(results: list[dict]) -> int:
@@ -1825,11 +1861,8 @@ def generate_html_report(all_results, output_path):
         tw = r["trailing_whitespace_lines"]
         sections = ""
         if result_is_incomplete(r):
-            watermark_errors = (r.get("watermark") or {}).get("scan_errors", []) or []
-            nested_errors = (r.get("watermark") or {}).get("nested_scan_errors", []) or []
             incomplete_errors = [r.get("error")] if r.get("error") else []
-            incomplete_errors.extend(watermark_errors)
-            incomplete_errors.extend(nested_errors)
+            incomplete_errors.extend(watermark_scan_errors(r.get("watermark") or {}))
             sections = (
                 '<div class="fb" style="--c:var(--critical)">'
                 '<div class="fh"><span class="bdg">INCOMPLETE</span>'
@@ -1838,7 +1871,12 @@ def generate_html_report(all_results, output_path):
                 + "</ul></div>"
             )
         watermark = r.get("watermark") or {}
-        watermark_findings = watermark.get("findings", []) or []
+        watermark_findings = [
+            (member_path, finding)
+            for member_path, node in _iter_watermark_tree(watermark)
+            for finding in node.get("findings") or []
+            if isinstance(finding, dict)
+        ]
         provenance = watermark.get("provenance", {})
         p_status = str(provenance.get("status", "NOT_CHECKED"))
         p_provider = str(provenance.get("provider", ""))
@@ -1881,19 +1919,19 @@ def generate_html_report(all_results, output_path):
             for path, record in nested_provenance
         )
         watermark_rows = "".join(
-            f"<tr><td>{escape(str(finding.get('category', '')))}</td>"
+            f"<tr><td>{escape(member_path)}</td>"
+            f"<td>{escape(str(finding.get('category', '')))}</td>"
             f"<td>{escape(str(finding.get('detector', '')))}</td>"
             f"<td>{escape(str(finding.get('description', '')))}</td>"
             f"<td>{escape(str(finding.get('risk', 'informational')))}</td>"
             f"<td>{float(finding.get('confidence', 0.0)):.0%}</td></tr>"
-            for finding in watermark_findings
-            if isinstance(finding, dict)
+            for member_path, finding in watermark_findings
         )
         watermark_section = (
             '<div class="fb watermark-findings"><div class="fh">'
             '<span class="bdg">WM</span><span class="ftt">Categorized Watermark Findings</span>'
             f'<span class="fc">{len(watermark_findings)} found</span></div>'
-            '<table class="tbl"><thead><tr><th>Category</th><th>Detector</th>'
+            '<table class="tbl"><thead><tr><th>Member</th><th>Category</th><th>Detector</th>'
             "<th>Description</th><th>Risk</th><th>Confidence</th></tr></thead>"
             f"<tbody>{watermark_rows}</tbody></table></div>"
             if watermark_rows

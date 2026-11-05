@@ -48,6 +48,28 @@ findings. Each JSON result lists the reasons in `incomplete_reasons`, and its
 `severity` only describes findings, so check that list or `incomplete_files`
 before treating `clean` as conclusive.
 
+### Sanitization profiles
+
+| Channel | `conservative` (default) | `destructive` |
+| --- | --- | --- |
+| `zero_width` | Keeps emoji joiners, joiners between letters of scripts that use them, zero-width spaces in unspaced scripts, direction marks beside right-to-left text, and a leading byte order mark. Removes the rest | Removes all |
+| `bidi` | Removes all | Removes all |
+| `homoglyphs` | Replaces lookalikes only inside words otherwise made of Latin letters | Replaces all, including in non-Latin words |
+| `trailing_whitespace` | Removes it, except two spaces for a hard break in Markdown files | Removes all |
+| `line_endings` | Converts mixed files to their most common ending and leaves consistent files alone | Converts all to LF |
+
+The conservative profile is not a guarantee that a file is free of hidden data.
+Kept characters can still carry a payload, so the report's `warnings` list them,
+and scanning the output can still flag them. Use `destructive` for hostile input
+when keeping the text exact does not matter.
+
+#### Migrating from 0.4.0
+
+`sanitize` and `sanitize_file()` previously behaved like `destructive`. To keep
+that behavior, pass `--profile destructive` or `profile="destructive"`. Reports add
+`policy`, `warnings`, and the `changes` keys `zero_width_preserved`,
+`homoglyphs_preserved`, and `hard_breaks_preserved`.
+
 ## Reports and schemas
 
 Machine-readable reports contain `schema_version`. Schema `1.x` may add

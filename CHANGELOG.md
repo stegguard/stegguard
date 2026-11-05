@@ -5,6 +5,10 @@ the Python API, CLI contract, and versioned report schema.
 
 ## Unreleased
 
+### Changed
+
+- CI now tests Python 3.13 and 3.14 on Windows and macOS, in addition to Linux.
+
 ## 0.4.0
 
 ### Added

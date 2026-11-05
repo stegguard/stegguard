@@ -17,6 +17,40 @@ def _read(relative: str) -> str:
     return (PROJECT_ROOT / relative).read_text(encoding="utf-8")
 
 
+def _ci_test_matrix() -> str:
+    test_job = _read(".github/workflows/ci.yml").split("\n  test:\n", 1)[1]
+    return test_job.split("matrix:\n", 1)[1].split("\n    steps:", 1)[0]
+
+
+def _matrix_values(key: str) -> list[str]:
+    found = re.search(rf"^\s*{key}: \[(.+)\]$", _ci_test_matrix(), re.M)
+    assert found, f"CI test matrix does not list {key} as an inline sequence"
+    return [value.strip().strip('"') for value in found.group(1).split(",")]
+
+
+def test_ci_test_job_runs_on_linux_windows_and_macos():
+    assert _matrix_values("os") == ["ubuntu-latest", "windows-latest", "macos-latest"]
+
+
+def test_ci_test_job_runs_every_python_version_classified_in_package_metadata():
+    classifiers = tomllib.loads(_read("pyproject.toml"))["project"]["classifiers"]
+    classified = [
+        classifier.rsplit(" ", 1)[1]
+        for classifier in classifiers
+        if re.fullmatch(r"Programming Language :: Python :: 3\.\d+", classifier)
+    ]
+
+    assert classified == ["3.12", "3.13", "3.14"]
+    assert _matrix_values("python-version") == classified
+
+
+def test_ci_test_matrix_does_not_add_or_remove_individual_combinations():
+    matrix = _ci_test_matrix()
+
+    assert "include:" not in matrix
+    assert "exclude:" not in matrix
+
+
 def test_ci_covers_supported_python_and_major_operating_systems():
     workflow = _read(".github/workflows/ci.yml")
 

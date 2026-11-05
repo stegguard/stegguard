@@ -8,9 +8,9 @@ CI job.
 
 | Platform | Python | CI configuration | Current evidence |
 | --- | --- | --- | --- |
-| Linux, GitHub-hosted runner | 3.12, 3.13, 3.14 | Required test matrix | Local Linux 3.12 passes; hosted results require GitHub |
-| Windows, GitHub-hosted runner | 3.12 | Required test matrix | Configured; hosted result pending |
-| macOS, GitHub-hosted runner | 3.12 | Required test matrix | Configured; hosted result pending |
+| Linux, GitHub-hosted runner | 3.12, 3.13, 3.14 | Test matrix | All three passed for the 0.4.0 release commit |
+| Windows, GitHub-hosted runner | 3.12, 3.13, 3.14 | Test matrix | 3.12 passed for the 0.4.0 release commit; 3.13 and 3.14 added after 0.4.0 |
+| macOS, GitHub-hosted runner | 3.12, 3.13, 3.14 | Test matrix | 3.12 passed for the 0.4.0 release commit; 3.13 and 3.14 added after 0.4.0 |
 
 The wheel is platform-independent Python code. CI builds it, checks its
 contents, installs it over the source installation, and runs a CLI smoke test.

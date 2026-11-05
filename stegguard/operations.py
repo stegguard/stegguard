@@ -9,8 +9,10 @@ import os
 import re
 import stat
 import tempfile
+import unicodedata
+from collections import Counter
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any, Iterable, Mapping
 
 from stegguard.detector import (
     BINARY_EXTENSIONS,
@@ -23,6 +25,9 @@ from stegguard.limits import ScanLimits, read_limited, resolve_limits
 from stegguard.schema import SCHEMA_VERSION
 
 
+SANITIZE_PROFILES = ("conservative", "destructive")
+SANITIZE_CHANNELS = ("zero_width", "bidi", "homoglyphs", "trailing_whitespace", "line_endings")
+
 _BIDI_CHARS = {
     "\u202a",
     "\u202b",
@@ -31,18 +36,74 @@ _BIDI_CHARS = {
     "\u202e",
     "\u2066",
     "\u2067",
+    "\u2068",
     "\u2069",
 }
 _HOMOGLYPH_REPLACEMENTS: dict[str, str | int | None] = {
     char: details[1] for char, details in HOMOGLYPH_CHARS.items()
 }
-_SANITIZE_TABLE = str.maketrans(
-    {
-        **{char: None for char in ZERO_WIDTH_CHARS},
-        **{char: None for char in _BIDI_CHARS},
-        **_HOMOGLYPH_REPLACEMENTS,
-    }
+_ZERO_WIDTH_PATTERN = re.compile("[" + "".join(ZERO_WIDTH_CHARS) + "]")
+_WORD_PATTERN = re.compile(r"[^\W\d_]+")
+_MARKDOWN_SUFFIXES = {".md", ".markdown", ".mdown", ".mkd", ".mdx"}
+_PROSE_SUFFIXES = _MARKDOWN_SUFFIXES | {".txt", ".rst", ".adoc", ".html", ".htm", ".svg", ".xml"}
+
+# Scripts that use a joiner or non-joiner to choose letter forms.
+_JOINING_SCRIPT_RANGES = (
+    (0x0600, 0x08FF),  # Arabic, Syriac, and extensions
+    (0x0900, 0x0DFF),  # Indic scripts
+    (0x0F00, 0x0FFF),  # Tibetan
+    (0x1000, 0x109F),  # Myanmar
+    (0x1780, 0x17FF),  # Khmer
+    (0xFB50, 0xFDFF),  # Arabic presentation forms
+    (0xFE70, 0xFEFC),
 )
+# Scripts written without spaces, where a zero-width space marks a word boundary.
+_UNSPACED_SCRIPT_RANGES = (
+    (0x0E00, 0x0EFF),  # Thai, Lao
+    (0x1000, 0x109F),  # Myanmar
+    (0x1780, 0x17FF),  # Khmer
+)
+_EMOJI_RANGES = (
+    (0x2190, 0x2BFF),
+    (0x3030, 0x3030),
+    (0x303D, 0x303D),
+    (0x3297, 0x3299),
+    (0xFE0F, 0xFE0F),  # emoji presentation selector
+    (0x1F000, 0x1FAFF),
+)
+
+
+def _in_ranges(char: str, ranges: tuple[tuple[int, int], ...]) -> bool:
+    return bool(char) and any(low <= ord(char) <= high for low, high in ranges)
+
+
+def _is_script_letter(char: str, ranges: tuple[tuple[int, int], ...]) -> bool:
+    return _in_ranges(char, ranges) and unicodedata.category(char)[0] in "LM"
+
+
+def _has_legitimate_use(text: str, index: int) -> bool:
+    """Return whether the conservative profile keeps the hidden character at index."""
+    char = text[index]
+    before = text[index - 1] if index else ""
+    after = text[index + 1] if index + 1 < len(text) else ""
+    if char == "\ufeff":
+        return index == 0
+    if char == "\u200d" and _in_ranges(before, _EMOJI_RANGES) and _in_ranges(after, _EMOJI_RANGES):
+        return True
+    if char in "\u200c\u200d":
+        return _is_script_letter(before, _JOINING_SCRIPT_RANGES) and _is_script_letter(
+            after, _JOINING_SCRIPT_RANGES
+        )
+    if char == "\u200b":
+        return _is_script_letter(before, _UNSPACED_SCRIPT_RANGES) and _is_script_letter(
+            after, _UNSPACED_SCRIPT_RANGES
+        )
+    if char in "\u200e\u200f":
+        return any(
+            neighbor and unicodedata.bidirectional(neighbor) in ("R", "AL")
+            for neighbor in (before, after)
+        )
+    return False
 
 
 def _sha256(data: bytes) -> str:
@@ -139,31 +200,171 @@ def decode_file(
     }
 
 
-def _sanitize_text(text: str) -> tuple[str, dict[str, int]]:
-    zero_width_removed = sum(text.count(char) for char in ZERO_WIDTH_CHARS)
-    bidi_removed = sum(text.count(char) for char in _BIDI_CHARS)
-    homoglyphs_replaced = sum(text.count(char) for char in _HOMOGLYPH_REPLACEMENTS)
+def _resolve_policy(profile: str, channels: Iterable[str] | None) -> tuple[str, ...]:
+    if profile not in SANITIZE_PROFILES:
+        raise ValueError(f"unknown sanitization profile: {profile}")
+    if channels is None:
+        return SANITIZE_CHANNELS
+    selected = set(channels)
+    unknown = selected.difference(SANITIZE_CHANNELS)
+    if unknown:
+        raise ValueError(f"unknown sanitization channel: {', '.join(sorted(unknown))}")
+    if not selected:
+        raise ValueError("select at least one sanitization channel")
+    return tuple(channel for channel in SANITIZE_CHANNELS if channel in selected)
 
-    translated = text.translate(_SANITIZE_TABLE)
+
+def _remove_zero_width(text: str, conservative: bool) -> str:
+    def keep_or_remove(match: re.Match[str]) -> str:
+        keep = conservative and _has_legitimate_use(text, match.start())
+        return match.group() if keep else ""
+
+    return _ZERO_WIDTH_PATTERN.sub(keep_or_remove, text)
+
+
+def _replace_homoglyphs(text: str, conservative: bool) -> str:
+    table = str.maketrans(_HOMOGLYPH_REPLACEMENTS)
+    if not conservative:
+        return text.translate(table)
+
+    def repair_mixed_word(match: re.Match[str]) -> str:
+        word = match.group()
+        has_latin = any(char.isascii() for char in word)
+        only_latin_and_lookalikes = all(
+            char.isascii() or char in _HOMOGLYPH_REPLACEMENTS for char in word
+        )
+        return word.translate(table) if has_latin and only_latin_and_lookalikes else word
+
+    return _WORD_PATTERN.sub(repair_mixed_word, text)
+
+
+def _line_ending_of(line: str) -> str:
+    return line[len(line.rstrip("\r\n")) :]
+
+
+def _clean_lines(
+    text: str,
+    channels: tuple[str, ...],
+    conservative: bool,
+    is_markdown: bool,
+) -> tuple[str, int, int, int]:
+    lines = text.splitlines(keepends=True)
+    endings = [ending for ending in map(_line_ending_of, lines) if ending]
+    target = "\n"
+    if conservative and endings:
+        # Prefer LF on a tie, so an evenly mixed file cannot choose a covert ending.
+        target = max(Counter(endings).items(), key=lambda item: (item[1], item[0] == "\n"))[0]
+
     output_lines: list[str] = []
-    trailing_whitespace_removed = 0
-    line_endings_normalized = 0
-    for line in translated.splitlines(keepends=True):
-        body = line.rstrip("\r\n")
-        ending = line[len(body) :]
-        clean_body = body.rstrip(" \t")
-        trailing_whitespace_removed += len(body) - len(clean_body)
-        if ending and ending != "\n":
-            line_endings_normalized += 1
-        output_lines.append(clean_body + ("\n" if ending else ""))
+    trailing_removed = 0
+    hard_breaks = 0
+    endings_normalized = 0
+    for index, line in enumerate(lines):
+        ending = _line_ending_of(line)
+        body = line[: len(line) - len(ending)]
+        if "trailing_whitespace" in channels:
+            clean_body = body.rstrip(" \t")
+            trailing = body[len(clean_body) :]
+            following = lines[index + 1].strip() if index + 1 < len(lines) else ""
+            if (
+                conservative
+                and is_markdown
+                and clean_body
+                and following
+                and len(trailing) >= 2
+                and not trailing.strip(" ")
+            ):
+                clean_body += "  "
+                hard_breaks += 1
+            trailing_removed += len(body) - len(clean_body)
+            body = clean_body
+        if "line_endings" in channels and ending and ending != target:
+            ending = target
+            endings_normalized += 1
+        output_lines.append(body + ending)
+    return "".join(output_lines), trailing_removed, hard_breaks, endings_normalized
 
-    return "".join(output_lines), {
-        "zero_width_removed": zero_width_removed,
+
+def _sanitize_text(
+    text: str,
+    channels: tuple[str, ...] = SANITIZE_CHANNELS,
+    profile: str = "conservative",
+    suffix: str = "",
+) -> tuple[str, dict[str, int]]:
+    conservative = profile == "conservative"
+    cleaned = text
+    bidi_removed = 0
+    if "bidi" in channels:
+        bidi_removed = sum(cleaned.count(char) for char in _BIDI_CHARS)
+        cleaned = cleaned.translate({ord(char): None for char in _BIDI_CHARS})
+
+    zero_width_before = sum(cleaned.count(char) for char in ZERO_WIDTH_CHARS)
+    if "zero_width" in channels:
+        cleaned = _remove_zero_width(cleaned, conservative)
+    zero_width_preserved = sum(cleaned.count(char) for char in ZERO_WIDTH_CHARS)
+
+    homoglyphs_before = sum(cleaned.count(char) for char in _HOMOGLYPH_REPLACEMENTS)
+    if "homoglyphs" in channels:
+        cleaned = _replace_homoglyphs(cleaned, conservative)
+    homoglyphs_preserved = sum(cleaned.count(char) for char in _HOMOGLYPH_REPLACEMENTS)
+
+    cleaned, trailing_removed, hard_breaks, endings_normalized = _clean_lines(
+        cleaned, channels, conservative, suffix in _MARKDOWN_SUFFIXES
+    )
+    return cleaned, {
+        "zero_width_removed": zero_width_before - zero_width_preserved,
+        "zero_width_preserved": zero_width_preserved,
         "bidi_removed": bidi_removed,
-        "homoglyphs_replaced": homoglyphs_replaced,
-        "trailing_whitespace_removed": trailing_whitespace_removed,
-        "line_endings_normalized": line_endings_normalized,
+        "homoglyphs_replaced": homoglyphs_before - homoglyphs_preserved,
+        "homoglyphs_preserved": homoglyphs_preserved,
+        "trailing_whitespace_removed": trailing_removed,
+        "hard_breaks_preserved": hard_breaks,
+        "line_endings_normalized": endings_normalized,
     }
+
+
+def _applied_channels(changes: dict[str, int]) -> list[str]:
+    counters = {
+        "zero_width": "zero_width_removed",
+        "bidi": "bidi_removed",
+        "homoglyphs": "homoglyphs_replaced",
+        "trailing_whitespace": "trailing_whitespace_removed",
+        "line_endings": "line_endings_normalized",
+    }
+    return [channel for channel in SANITIZE_CHANNELS if changes[counters[channel]]]
+
+
+def _sanitize_warnings(
+    changes: dict[str, int], profile: str, suffix: str, changed: bool
+) -> list[str]:
+    warnings = []
+    if changes["zero_width_preserved"]:
+        warnings.append(
+            f"Kept {changes['zero_width_preserved']} zero-width character(s) in text where they "
+            "have a legitimate use; they can still carry data. "
+            "Use --profile destructive to remove them."
+        )
+    if changes["homoglyphs_preserved"]:
+        warnings.append(
+            f"Kept {changes['homoglyphs_preserved']} letter(s) that look like Latin letters; "
+            "they can still carry data. Use --profile destructive to replace them."
+        )
+    if changes["hard_breaks_preserved"]:
+        warnings.append(
+            f"Kept {changes['hard_breaks_preserved']} Markdown hard break(s); they can still "
+            "carry data. Use --profile destructive to remove them."
+        )
+    if changed and profile == "destructive":
+        warnings.append(
+            "The destructive profile can change legitimate text, including non-Latin words "
+            "and emoji. Review the diff."
+        )
+    if changed and suffix not in _PROSE_SUFFIXES:
+        warnings.append(
+            "Changes to source code can alter its behavior, including string literals. "
+            "Review the diff."
+        )
+    return warnings
 
 
 def _write_bytes(path: Path, data: bytes, *, atomic: bool, mode: int | None = None) -> None:
@@ -199,15 +400,24 @@ def sanitize_file(
     confirm: bool = False,
     provenance_validator: Any = None,
     limits: ScanLimits | Mapping[str, Any] | None = None,
+    profile: str = "conservative",
+    channels: Iterable[str] | None = None,
 ) -> dict[str, Any]:
-    """Sanitize a text file, copying by default and reporting every change."""
+    """Sanitize a text file, copying by default and reporting every change.
+
+    The conservative profile keeps hidden characters where they have a legitimate
+    use. The destructive profile removes all of them and can change legitimate text.
+    channels limits which transformations run; by default all of them do.
+    """
     if in_place != confirm:
         raise ValueError("overwriting requires both --in-place and --confirm")
     if in_place and output_path is not None:
         raise ValueError("output_path cannot be combined with --in-place")
+    selected_channels = _resolve_policy(profile, channels)
 
     policy = resolve_limits(limits)
     source = Path(path)
+    suffix = source.suffix.lower()
     source_mode = stat.S_IMODE(source.stat().st_mode)
     is_binary = source.suffix.lower() in BINARY_EXTENSIONS
     if is_binary:
@@ -226,15 +436,9 @@ def sanitize_file(
     if is_binary:
         clean_text = ""
         raw_after = raw_before
-        changes = {
-            "zero_width_removed": 0,
-            "bidi_removed": 0,
-            "homoglyphs_replaced": 0,
-            "trailing_whitespace_removed": 0,
-            "line_endings_normalized": 0,
-        }
+        changes = dict.fromkeys(_sanitize_text("")[1], 0)
     else:
-        clean_text, changes = _sanitize_text(text)
+        clean_text, changes = _sanitize_text(text, selected_channels, profile, suffix)
         raw_after = clean_text.encode(encoding)
 
     if in_place:
@@ -305,7 +509,13 @@ def sanitize_file(
         "sha256_before": _sha256(raw_before),
         "sha256_after": _sha256(raw_after),
         "changed": raw_before != raw_after,
+        "policy": {
+            "profile": profile,
+            "channels": list(selected_channels),
+            "applied": _applied_channels(changes),
+        },
         "changes": changes,
+        "warnings": _sanitize_warnings(changes, profile, suffix, raw_before != raw_after),
         "diff": diff,
         "original_preserved": not in_place,
         "sanitization_status": "NO_OP_UNSUPPORTED" if is_binary else "SANITIZED",

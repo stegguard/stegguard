@@ -10,6 +10,7 @@ import json
 import sys
 
 from stegguard.common import use_utf8_output
+from stegguard.operations import SANITIZE_CHANNELS, SANITIZE_PROFILES
 from stegguard.limits import add_limit_arguments, limits_from_namespace
 from stegguard._version import __version__
 from stegguard.reporting import atomic_write_text
@@ -47,6 +48,8 @@ def cmd_sanitize(args):
         in_place=args.in_place,
         confirm=args.confirm,
         limits=limits_from_namespace(args),
+        profile=args.profile,
+        channels=args.channels,
     )
     print(json.dumps(result, indent=2, ensure_ascii=False))
     return 0
@@ -146,6 +149,22 @@ Examples:
         "--confirm",
         action="store_true",
         help="Required together with --in-place",
+    )
+    p_sanitize.add_argument(
+        "--profile",
+        choices=SANITIZE_PROFILES,
+        default="conservative",
+        help=(
+            "conservative (default) keeps hidden characters where they have a legitimate use; "
+            "destructive removes all of them and can change legitimate text"
+        ),
+    )
+    p_sanitize.add_argument(
+        "--channel",
+        dest="channels",
+        action="append",
+        choices=SANITIZE_CHANNELS,
+        help="Run only this transformation; repeat to select several (default: all)",
     )
     add_limit_arguments(p_sanitize)
     p_sanitize.set_defaults(func=cmd_sanitize)

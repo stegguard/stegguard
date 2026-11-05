@@ -8,6 +8,14 @@ the Python API, CLI contract, and versioned report schema.
 ### Changed
 
 - CI now tests Python 3.13 and 3.14 on Windows and macOS, in addition to Linux.
+- **Security-relevant default:** `sanitize` now uses a `conservative` profile that
+  keeps non-Latin text, emoji sequences, script joiners, Markdown hard breaks, and
+  consistent CRLF files, which 0.4.0 damaged. Kept characters can still carry data,
+  so reports warn about them and a later scan can still flag them. For the 0.4.0
+  behavior, pass `--profile destructive`. See `docs/compatibility.md`.
+- `sanitize` adds `--profile` and `--channel`, and reports add `policy`, `warnings`,
+  and counts of what was kept.
+- `sanitize` now also removes U+2068, First Strong Isolate.
 
 ### Fixed
 

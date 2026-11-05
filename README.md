@@ -202,7 +202,8 @@ it reports:
 
 - SHA-256 hashes before and after
 - A unified text diff
-- Counts for every normalization
+- The profile and channels used, and counts for every change
+- Warnings about anything it kept that could still carry data
 - Whether the original was preserved
 - Provenance status before and after
 - Whether a content change invalidated provenance
@@ -212,6 +213,25 @@ Overwriting the original requires both flags:
 ```bash
 stegguard sanitize suspicious.txt --in-place --confirm
 ```
+
+The default `conservative` profile removes hidden characters only where they have
+no legitimate use. It keeps Russian and other non-Latin text, emoji sequences,
+joiners in scripts such as Persian and Hindi, Markdown hard breaks, and files that
+consistently use CRLF. It still repairs a lookalike letter inside a Latin word, so
+`pаypal` with a Cyrillic `а` becomes `paypal`. Anything it keeps can still carry
+data, so the report warns about it and a later scan can still flag it.
+
+When the text is hostile and matters less than removing every channel, ask for the
+destructive profile. It removes all of these characters and can change legitimate
+text, such as turning `Привет` into mixed-script `Пpивeт`:
+
+```bash
+stegguard sanitize suspicious.txt --profile destructive
+```
+
+To run only some transformations, repeat `--channel` with `zero_width`, `bidi`,
+`homoglyphs`, `trailing_whitespace`, or `line_endings`. Changes to source code can
+alter its behavior, including string literals, so review the diff.
 
 Unsupported binary formats are copied byte-for-byte and marked
 `NO_OP_UNSUPPORTED`. StegGuard does not push binary data through a text cleaner

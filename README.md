@@ -64,7 +64,7 @@ replacement.
 
 ## Install
 
-When a release is available on PyPI:
+Install from PyPI:
 
 ```bash
 python3 -m pip install stegguard
@@ -87,9 +87,9 @@ For wider image-format decoding through the explicitly tested Pillow path:
 python3 -m pip install "stegguard[images]"
 ```
 
-The supported Python range is 3.12 through 3.14. CI is configured for Linux,
-macOS, and Windows; hosted results are required before those targets are
-described as verified. Architecture details and current evidence are in
+The supported Python range is 3.12 through 3.14. CI runs the test suite on every
+version on Linux, macOS, and Windows. Architecture details and current evidence
+are in
 [docs/platform-support.md](https://github.com/stegguard/stegguard/blob/main/docs/platform-support.md).
 
 ## Quick start

@@ -147,6 +147,18 @@ def test_changelog_lists_the_current_version_directly_below_unreleased():
     assert headings[1] == __version__
 
 
+def test_readme_install_section_leads_with_pypi_as_an_available_release():
+    readme = _read("README.md")
+    install = readme.split("## Install\n", 1)[1].split("\n## ", 1)[0]
+
+    assert install.startswith("\nInstall from PyPI:\n\n```bash\npython3 -m pip install stegguard\n")
+    assert "When a release is available" not in install
+
+
+def test_readme_does_not_describe_hosted_platform_results_as_outstanding():
+    assert "hosted results are required" not in _read("README.md")
+
+
 def test_readme_links_and_images_resolve_outside_github():
     readme = _read("README.md")
     targets = re.findall(r"\]\(([^)\s]+)\)", readme) + re.findall(r'(?:src|href)="([^"]+)"', readme)

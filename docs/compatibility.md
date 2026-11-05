@@ -32,6 +32,22 @@ major release if machine contracts remain stable.
 `2` on invalid input or an incomplete operation. Findings from `watermark` are
 reported in JSON; only `detect` currently uses `1` for a positive result.
 
+### What counts as an incomplete scan
+
+| Analysis | When it does not finish | Effect |
+| --- | --- | --- |
+| Required: file reading, text and binary scans, nested container scans, LSB analysis of `.png`, `.bmp`, `.gif`, and `.tif`/`.tiff` files, and the JSON report's file hash | Malformed input, an exhausted resource limit, or an image the available decoders cannot read | Incomplete, exit `2` |
+| Configured: a robust-media analyzer or AI text verifier that was set up to run | The analyzer raises or returns `ERROR` | Incomplete, exit `2` |
+| Optional: a robust-media analyzer with none configured or a format outside the built-in analyzer's scope | Status stays `NOT_CHECKED` | Not a failure; robust media is listed as not checked in terminal and HTML output |
+| Optional: AI text verifier with none configured, C2PA validation | Status stays `NOT_CHECKED` | Not a failure; reported in JSON and HTML |
+
+The built-in PNG decoder reads non-interlaced 8-bit images only. Other valid
+images are incomplete unless Pillow can decode them, so install
+`stegguard[images]` to scan them. An incomplete result takes precedence over
+findings. Each JSON result lists the reasons in `incomplete_reasons`, and its
+`severity` only describes findings, so check that list or `incomplete_files`
+before treating `clean` as conclusive.
+
 ## Reports and schemas
 
 Machine-readable reports contain `schema_version`. Schema `1.x` may add

@@ -661,6 +661,11 @@ def attempt_decode_zero_width(occurrences: list) -> str:
     return ""
 
 
+def _printable(text: str) -> str:
+    """Stop names taken from scanned containers from driving the terminal."""
+    return "".join(char if char.isprintable() else "?" for char in text)
+
+
 def print_results(results: dict, verbose: bool = False, decode: bool = False):
     filepath = results["file"]
     total = results["total_hidden"]
@@ -669,21 +674,28 @@ def print_results(results: dict, verbose: bool = False, decode: bool = False):
         print(color(f"  ERROR: {results['error']}", RED))
         return
     watermark = results.get("watermark") or {}
-    partial_errors = [
-        *watermark.get("scan_errors", []),
-        *watermark.get("nested_scan_errors", []),
-    ]
+    partial_errors = scan_failure_reasons(results)
     if partial_errors:
         print(color("  INCOMPLETE: one or more scan stages stopped early", RED, BOLD))
         for error in partial_errors:
-            print(color(f"    {error}", RED))
+            print(color(f"    {_printable(error)}", RED))
+    attention_items = _watermark_attention_items(watermark)
+    if attention_items:
+        print(color("  ⚠ Watermark or provenance findings need attention:", YELLOW, BOLD))
+        for item in attention_items:
+            print(color(f"    {_printable(item)}", YELLOW))
+    for note in _watermark_unchecked_notes(watermark):
+        print(color(f"  {_printable(note)}", DIM))
+    qualified = bool(partial_errors or attention_items)
 
     # ── Binary scan branch ───────────────────────────────────────────────
     if results.get("file_mode") == "binary":
         hits = results.get("binary_hits", [])
         lsb = results.get("lsb_analysis")
 
-        if not hits:
+        if not hits and qualified:
+            print(color("  No suspicious byte sequences in the raw bytes", DIM))
+        elif not hits:
             print(color(f"  ✓ Clean (binary scan) — no suspicious byte sequences", GREEN))
         else:
             zwc = [h for h in hits if h.cat == "ZWC"]
@@ -728,6 +740,9 @@ def print_results(results: dict, verbose: bool = False, decode: bool = False):
 
     has_anything = total > 0 or tw or mixed
 
+    if not has_anything and qualified:
+        print(color("  No hidden characters found", DIM))
+        return
     if not has_anything:
         print(color(f"  ✓ Clean — no hidden characters found", GREEN))
         return
@@ -1282,16 +1297,82 @@ def severity_html(total_hidden, tw, mixed, lsb_suspicious: bool = False):
     return "low", "LOW", "var(--low)"
 
 
+def _iter_watermark_tree(watermark: dict, member_path: str = ""):
+    """Yield (member path, watermark result) for a result and everything nested in it."""
+    yield member_path, watermark
+    for item in watermark.get("nested_results") or []:
+        nested = item.get("result") if isinstance(item, dict) else None
+        if isinstance(nested, dict):
+            path = str(item.get("path", "nested asset"))
+            yield from _iter_watermark_tree(
+                nested, f"{member_path} > {path}" if member_path else path
+            )
+
+
+def _at_member(member_path: str, text: str) -> str:
+    return f"{member_path}: {text}" if member_path else text
+
+
+def _analyzer_failures(node: dict) -> list[str]:
+    """Describe analyzers that were set up to run on this node and then failed.
+
+    NOT_CHECKED is not a failure: it means no analyzer was configured or the format
+    is out of scope for the built-in one. See docs/compatibility.md.
+    """
+    failures: list[str] = []
+    labeled = [
+        (f"{category} analyzer", analysis)
+        for category, analysis in (node.get("robust_media") or {}).items()
+    ]
+    labeled.append(("AI text verifier", node.get("ai_text_watermark")))
+    for label, analysis in labeled:
+        if isinstance(analysis, dict) and analysis.get("status") == "ERROR":
+            reasons = analysis.get("errors") or ["no reason given"]
+            failures.extend(f"{label} failed: {reason}" for reason in reasons)
+    return failures
+
+
+def watermark_scan_errors(watermark: dict) -> list[str]:
+    """Return scan and analyzer failures from every nesting level, with their member path."""
+    return [
+        _at_member(member_path, str(error))
+        for member_path, node in _iter_watermark_tree(watermark)
+        for error in [
+            *(node.get("scan_errors") or []),
+            *(node.get("nested_scan_errors") or []),
+            *_analyzer_failures(node),
+        ]
+    ]
+
+
+def _watermark_unchecked_notes(watermark: dict) -> list[str]:
+    """Describe robust-media coverage that was skipped without being a failure."""
+    return [
+        _at_member(member_path, f"Not checked: {str(reason).strip()}")
+        for member_path, node in _iter_watermark_tree(watermark)
+        for analysis in (node.get("robust_media") or {}).values()
+        if isinstance(analysis, dict) and analysis.get("status") == "NOT_CHECKED"
+        for reason in analysis.get("errors") or []
+    ]
+
+
+def _watermark_attention_items(watermark: dict) -> list[str]:
+    """Describe actionable findings from every nesting level, with their member path."""
+    items = []
+    for member_path, node in _iter_watermark_tree(watermark):
+        status = (node.get("provenance") or {}).get("status")
+        if status in ("TAMPERED", "UNTRUSTED_SIGNER"):
+            items.append(_at_member(member_path, f"provenance {status}"))
+        items.extend(
+            _at_member(member_path, f"{finding.get('category', '')} ({finding.get('risk')})")
+            for finding in node.get("findings") or []
+            if isinstance(finding, dict) and finding.get("risk") not in (None, "informational")
+        )
+    return items
+
+
 def _watermark_requires_attention(result: dict) -> bool:
-    watermark = result.get("watermark") or {}
-    provenance = watermark.get("provenance") or {}
-    if provenance.get("status") in ("TAMPERED", "UNTRUSTED_SIGNER"):
-        return True
-    return any(
-        finding.get("risk") not in (None, "informational")
-        for finding in watermark.get("findings", [])
-        if isinstance(finding, dict)
-    )
+    return bool(_watermark_attention_items(result.get("watermark") or {}))
 
 
 def result_is_flagged(result: dict) -> bool:
@@ -1305,12 +1386,19 @@ def result_is_flagged(result: dict) -> bool:
     )
 
 
+def scan_failure_reasons(result: dict) -> list[str]:
+    """Explain why a result is not a conclusive scan; empty when it is."""
+    reasons = [str(result["error"])] if result.get("error") else []
+    lsb_error = (result.get("lsb_analysis") or {}).get("error")
+    if lsb_error:
+        reasons.append(f"LSB analysis: {lsb_error}")
+    reasons.extend(watermark_scan_errors(result.get("watermark") or {}))
+    return reasons
+
+
 def result_is_incomplete(result: dict) -> bool:
     """Return whether any stage failed or stopped before a conclusive scan."""
-    watermark = result.get("watermark") or {}
-    return bool(
-        result.get("error") or watermark.get("scan_errors") or watermark.get("nested_scan_errors")
-    )
+    return bool(scan_failure_reasons(result))
 
 
 def scan_exit_code(results: list[dict]) -> int:
@@ -1320,10 +1408,24 @@ def scan_exit_code(results: list[dict]) -> int:
     return 1 if any(result_is_flagged(result) for result in results) else 0
 
 
-def result_to_json_dict(r: dict) -> dict:
-    """Serialize one analyze_file() result dict to a JSON-safe dict."""
+def _record_sha256(r: dict) -> None:
+    """Store the file hash JSON reports need; a failure makes the result incomplete."""
     import hashlib
 
+    if "sha256" in r:
+        return
+    r["sha256"] = ""
+    if r.get("error"):
+        return
+    try:
+        r["sha256"] = hashlib.sha256(Path(r["file"]).read_bytes()).hexdigest()
+    except OSError as exc:
+        r["error"] = f"Could not hash file for report: {exc}"
+
+
+def result_to_json_dict(r: dict) -> dict:
+    """Serialize one analyze_file() result dict to a JSON-safe dict."""
+    _record_sha256(r)
     lsb = r.get("lsb_analysis") or {}
     lsb_suspicious = bool(lsb.get("suspicious_channels"))
     sev_class, _, _ = severity_html(
@@ -1334,11 +1436,6 @@ def result_to_json_dict(r: dict) -> dict:
     )
     if _watermark_requires_attention(r) and sev_class in ("clean", "low", "medium"):
         sev_class = "high"
-    sha256 = ""
-    try:
-        sha256 = hashlib.sha256(Path(r["file"]).read_bytes()).hexdigest()
-    except Exception:
-        pass
 
     # Serialize lsb_analysis — strip non-JSON-safe tuples
     lsb_out = None
@@ -1351,9 +1448,10 @@ def result_to_json_dict(r: dict) -> dict:
         "file": r["file"],
         "file_mode": r.get("file_mode", "text"),
         "severity": sev_class,
-        "sha256": sha256,
+        "sha256": r["sha256"],
         "total_hidden": r["total_hidden"],
         "error": r.get("error", ""),
+        "incomplete_reasons": scan_failure_reasons(r),
         "mixed_line_endings": r["mixed_line_endings"],
         "zero_width": [
             {
@@ -1418,6 +1516,7 @@ def write_json_output(all_results: list, path: str) -> None:
     """Write scan results as structured JSON for steg_decoder.py consumption."""
     import json, datetime
 
+    serialized = [result_to_json_dict(r) for r in all_results]
     flagged = sum(1 for result in all_results if result_is_flagged(result))
     incomplete = sum(1 for result in all_results if result_is_incomplete(result))
     payload = {
@@ -1433,7 +1532,7 @@ def write_json_output(all_results: list, path: str) -> None:
             for result in all_results
             if not result_is_flagged(result) and not result_is_incomplete(result)
         ),
-        "results": [result_to_json_dict(r) for r in all_results],
+        "results": serialized,
     }
     atomic_write_text(path, json.dumps(payload, indent=2, ensure_ascii=False))
 
@@ -1825,11 +1924,7 @@ def generate_html_report(all_results, output_path):
         tw = r["trailing_whitespace_lines"]
         sections = ""
         if result_is_incomplete(r):
-            watermark_errors = (r.get("watermark") or {}).get("scan_errors", []) or []
-            nested_errors = (r.get("watermark") or {}).get("nested_scan_errors", []) or []
-            incomplete_errors = [r.get("error")] if r.get("error") else []
-            incomplete_errors.extend(watermark_errors)
-            incomplete_errors.extend(nested_errors)
+            incomplete_errors = scan_failure_reasons(r)
             sections = (
                 '<div class="fb" style="--c:var(--critical)">'
                 '<div class="fh"><span class="bdg">INCOMPLETE</span>'
@@ -1838,7 +1933,12 @@ def generate_html_report(all_results, output_path):
                 + "</ul></div>"
             )
         watermark = r.get("watermark") or {}
-        watermark_findings = watermark.get("findings", []) or []
+        watermark_findings = [
+            (member_path, finding)
+            for member_path, node in _iter_watermark_tree(watermark)
+            for finding in node.get("findings") or []
+            if isinstance(finding, dict)
+        ]
         provenance = watermark.get("provenance", {})
         p_status = str(provenance.get("status", "NOT_CHECKED"))
         p_provider = str(provenance.get("provider", ""))
@@ -1881,23 +1981,27 @@ def generate_html_report(all_results, output_path):
             for path, record in nested_provenance
         )
         watermark_rows = "".join(
-            f"<tr><td>{escape(str(finding.get('category', '')))}</td>"
+            f"<tr><td>{escape(member_path)}</td>"
+            f"<td>{escape(str(finding.get('category', '')))}</td>"
             f"<td>{escape(str(finding.get('detector', '')))}</td>"
             f"<td>{escape(str(finding.get('description', '')))}</td>"
             f"<td>{escape(str(finding.get('risk', 'informational')))}</td>"
             f"<td>{float(finding.get('confidence', 0.0)):.0%}</td></tr>"
-            for finding in watermark_findings
-            if isinstance(finding, dict)
+            for member_path, finding in watermark_findings
         )
         watermark_section = (
             '<div class="fb watermark-findings"><div class="fh">'
             '<span class="bdg">WM</span><span class="ftt">Categorized Watermark Findings</span>'
             f'<span class="fc">{len(watermark_findings)} found</span></div>'
-            '<table class="tbl"><thead><tr><th>Category</th><th>Detector</th>'
+            '<table class="tbl"><thead><tr><th>Member</th><th>Category</th><th>Detector</th>'
             "<th>Description</th><th>Risk</th><th>Confidence</th></tr></thead>"
             f"<tbody>{watermark_rows}</tbody></table></div>"
             if watermark_rows
             else ""
+        )
+        watermark_section += "".join(
+            f'<div class="muted">{escape(note)}</div>'
+            for note in _watermark_unchecked_notes(watermark)
         )
         provenance_section = (
             f'<div class="fb provenance-panel" style="--c:{p_color}">'
@@ -2025,7 +2129,7 @@ def generate_html_report(all_results, output_path):
                     f'</div><div class="fbody">{inner}</div></div>'
                 )
             elif lsb and lsb.get("error"):
-                lsb_section = f'<div class="muted">LSB analysis: {lsb["error"]}</div>'
+                lsb_section = f'<div class="muted">LSB analysis: {escape(str(lsb["error"]))}</div>'
 
             return (
                 f'<div class="card" id="f{abs(hash(fp))}" data-sev="{sv_class}">'
@@ -3625,6 +3729,8 @@ def main(argv: list[str] | None = None) -> int:
             print(color(f"\n\U0001f4c4 {f}", BOLD))
             results = analyze_file(f, verbose=args.verbose, limits=scan_limits)
             all_results.append(results)
+            if args.json_out:
+                _record_sha256(results)
             print_results(results, verbose=args.verbose, decode=args.decode)
             if result_is_flagged(results):
                 flagged += 1
@@ -3729,6 +3835,7 @@ def main(argv: list[str] | None = None) -> int:
 
         total_reports = 0
         total_flagged_folders = 0
+        total_incomplete_folders = 0
         all_critical_paths: list = []  # accumulates across all folders
         completed_results: list[dict] = []
 
@@ -3757,15 +3864,19 @@ def main(argv: list[str] | None = None) -> int:
 
             if folder_results:
                 generate_html_report(folder_results, str(html_path))
-                status = (
-                    color(f"{folder_flagged} flagged", YELLOW)
-                    if folder_flagged
-                    else color("clean", GREEN)
-                )
+                folder_incomplete = sum(1 for r in folder_results if result_is_incomplete(r))
+                status_parts = []
+                if folder_flagged:
+                    status_parts.append(color(f"{folder_flagged} flagged", YELLOW))
+                if folder_incomplete:
+                    status_parts.append(color(f"{folder_incomplete} incomplete", RED))
+                status = ", ".join(status_parts) or color("clean", GREEN)
                 print(color(f"  \U0001f4ca  {html_path}  [{status}", CYAN) + color("]", CYAN))
                 total_reports += 1
                 if folder_flagged:
                     total_flagged_folders += 1
+                if folder_incomplete:
+                    total_incomplete_folders += 1
 
                 # ── Write per-folder CRITICAL txt ──────────────────────────
                 critical_paths = [
@@ -3809,7 +3920,15 @@ def main(argv: list[str] | None = None) -> int:
             print(
                 color(f"  \u26a0  {total_flagged_folders} folder(s) had findings\n", YELLOW, BOLD)
             )
-        else:
+        if total_incomplete_folders:
+            print(
+                color(
+                    f"  \u2717  {total_incomplete_folders} folder(s) incomplete; not clean\n",
+                    RED,
+                    BOLD,
+                )
+            )
+        if not total_flagged_folders and not total_incomplete_folders:
             print(color(f"  \u2713  All folders clean\n", GREEN, BOLD))
 
         # ── Write master critical_all.txt across all folders ───────────────
@@ -3840,26 +3959,14 @@ def main(argv: list[str] | None = None) -> int:
             print(color(f"  \U0001f4dd  {master_txt}  [no critical files found]", DIM))
 
         # Also write a combined summary report if --html is also given
-        if args.html is not None:
-            all_combined: list = []
-            for folder, base in folders_to_scan:
-                files, _ = collect_files(folder, extensions, recursive=True, skip_venvs=skip_venvs)
-                for f in files:
-                    all_combined.append(analyze_file(f, verbose=args.verbose, limits=scan_limits))
-            if all_combined:
-                generate_html_report(all_combined, args.html)
-                print(color(f"  \U0001f4ca  Combined report → {args.html}\n", CYAN, BOLD))
+        if args.html is not None and completed_results:
+            generate_html_report(completed_results, args.html)
+            print(color(f"  \U0001f4ca  Combined report → {args.html}\n", CYAN, BOLD))
 
         # ── JSON output ───────────────────────────────────────────────────
-        if args.json_out:
-            all_for_json: list = []
-            for folder, base in folders_to_scan:
-                files, _ = collect_files(folder, extensions, recursive=True, skip_venvs=skip_venvs)
-                for f in files:
-                    all_for_json.append(analyze_file(f, verbose=args.verbose, limits=scan_limits))
-            if all_for_json:
-                write_json_output(all_for_json, args.json_out)
-                print(color(f"  \U0001f5c2  JSON findings → {args.json_out}\n", CYAN, BOLD))
+        if args.json_out and completed_results:
+            write_json_output(completed_results, args.json_out)
+            print(color(f"  \U0001f5c2  JSON findings → {args.json_out}\n", CYAN, BOLD))
         return scan_exit_code(completed_results)
 
     # ════════════════════════════════════════════════════════════════════════════

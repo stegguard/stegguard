@@ -9,6 +9,23 @@ the Python API, CLI contract, and versioned report schema.
 
 - CI now tests Python 3.13 and 3.14 on Windows and macOS, in addition to Linux.
 
+### Fixed
+
+- `detect` no longer reports a container as clean when a nested member has an
+  actionable watermark or provenance finding, or when a scan stopped early at a
+  nested level. These containers now exit `1` or `2`, count as flagged or
+  incomplete, and name the member path in terminal and HTML output, so scans
+  that previously passed may now fail.
+- `detect` no longer reports a file as clean when LSB image analysis, a configured
+  analyzer, or the JSON report's file hash fails. These results exit `2`, and JSON
+  results list the cause in the new `incomplete_reasons` field. Valid images the
+  built-in decoder cannot read, such as interlaced PNGs, are now incomplete unless
+  Pillow can decode them; install `stegguard[images]` to scan them.
+- `watermark` now exits `2` on an incomplete scan, as documented.
+- Per-folder mode no longer reports an incomplete folder as clean, and it scans
+  each file once instead of repeating the scan for JSON and combined reports.
+- LSB error text is now escaped in HTML reports.
+
 ## 0.4.0
 
 ### Added

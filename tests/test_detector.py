@@ -1019,7 +1019,7 @@ class TestPrintResults(unittest.TestCase):
 
 class TestPrintResultsBranches(unittest.TestCase):
     def test_binary_clean_message(self):
-        p = tmp(b"\x89PNG\r\n" + b"\x00" * 100, ".png")
+        p = tmp(b"\xff\xd8\xff\xd9", ".jpg")
         try:
             out = cap(sd.print_results, sd.analyze_file(p), verbose=True)
             self.assertIn("Clean", out)

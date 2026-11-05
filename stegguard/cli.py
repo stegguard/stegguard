@@ -56,7 +56,12 @@ def cmd_watermark(args):
     """Run categorized watermark and provenance analysis."""
     from pathlib import Path
 
-    from stegguard.detector import analyze_file, generate_html_report
+    from stegguard.detector import (
+        analyze_file,
+        generate_html_report,
+        result_is_incomplete,
+        watermark_scan_errors,
+    )
     from stegguard.integrations import C2paToolValidator, RemoteManifestLoader
     from stegguard.watermark import scan_file
 
@@ -74,12 +79,14 @@ def cmd_watermark(args):
             args.json_output,
             json.dumps(result, indent=2, ensure_ascii=False),
         )
+    incomplete = bool(watermark_scan_errors(result))
     if args.html:
         detector_result = analyze_file(Path(args.input), limits=policy)
         detector_result["watermark"] = result
         generate_html_report([detector_result], args.html)
+        incomplete = result_is_incomplete(detector_result)
     print(json.dumps(result, indent=2, ensure_ascii=False))
-    return 0
+    return 2 if incomplete else 0
 
 
 def build_parser():

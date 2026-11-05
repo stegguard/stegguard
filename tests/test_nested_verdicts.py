@@ -216,7 +216,9 @@ def test_informational_nested_finding_does_not_flag_the_container():
 
 
 @pytest.mark.parametrize("status", ["TAMPERED", "UNTRUSTED_SIGNER"])
-def test_nested_failed_provenance_flags_the_container(status):
+def test_nested_failed_provenance_flags_the_container(status, tmp_path):
+    source = tmp_path / "container.zip"
+    source.write_bytes(_zip_bytes({"signed.png": b"png"}))
     result = _result_with_watermark(
         {
             "findings": [],
@@ -226,6 +228,7 @@ def test_nested_failed_provenance_flags_the_container(status):
             ],
         }
     )
+    result["file"] = str(source)
 
     assert detector.result_is_flagged(result) is True
     assert detector.result_to_json_dict(result)["severity"] == "high"

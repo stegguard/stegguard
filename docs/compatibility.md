@@ -71,6 +71,21 @@ that behavior, pass `--profile destructive` or `profile="destructive"`. Reports 
 `policy`, `warnings`, and the `changes` keys `zero_width_preserved`,
 `homoglyphs_preserved`, and `hard_breaks_preserved`.
 
+`sanitize` and `sanitize_file()` previously copied binary files unchanged. They
+now remove metadata and can clear pixel LSBs in supported formats, so the output
+can differ from the input. To keep the old result for a binary file, select only
+text channels, such as `--channel zero_width`. Binary reports add a `binary` key
+and the `changes` keys `metadata_removed`, `trailing_bytes_removed`, and
+`lsb_samples_cleared`. `sanitization_status` can now be `PARTIAL`, which still
+exits `0`, so check the status rather than the exit code to confirm a file was
+fully cleaned.
+
+`decode_file()` now returns `metadata` and `lsb` with status `DECODED` for
+supported binary files, instead of `NOT_SUPPORTED`.
+
+The `--max-*` options still work but no longer appear in `--help`. Use `--help-all`
+to list them.
+
 ## Reports and schemas
 
 Machine-readable reports contain `schema_version`. Schema `1.x` may add

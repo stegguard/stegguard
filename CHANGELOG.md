@@ -5,6 +5,8 @@ the Python API, CLI contract, and versioned report schema.
 
 ## Unreleased
 
+## 0.5.0
+
 ### Added
 
 - `stegguard decode` reads metadata fields from PNG, JPEG, GIF, TIFF, ZIP, MP3, and

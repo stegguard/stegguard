@@ -2,22 +2,40 @@
 # SPDX-License-Identifier: Apache-2.0
 
 """
-StegGuard CLI — unified entry point for detect and decode subcommands.
+StegGuard CLI — unified entry point for the detect, decode, sanitize, and watermark commands.
 """
 
 import argparse
 import json
 import sys
 
-from stegguard.common import use_utf8_output
-from stegguard.operations import SANITIZE_CHANNELS, SANITIZE_PROFILES
+from stegguard.common import DARK_CYAN, color, use_utf8_output
+from stegguard.help_format import CommandListFormatter, StyledParser
+from stegguard.operations import (
+    BINARY_SANITIZE_CHANNELS,
+    SANITIZE_CHANNELS,
+    SANITIZE_PROFILES,
+    SEVERITY_LEVELS,
+    TEXT_SANITIZE_CHANNELS,
+)
 from stegguard.limits import add_limit_arguments, limits_from_namespace
 from stegguard._version import __version__
 from stegguard.reporting import atomic_write_text
 
+# Plain ASCII and under 80 columns, so it renders on any console.
+BANNER = "\n".join(
+    (
+        r" ____  _____ _____ ____  ____ _   _   _    ____  ____  ",
+        r"/ ___||_   _| ____/ ___|/ ___| | | | / \  |  _ \|  _ \ ",
+        r"\___ \  | | |  _|| |  _| |  _| | | |/ _ \ | |_) | | | |",
+        r" ___) | | | | |__| |_| | |_| | |_| / ___ \|  _ <| |_| |",
+        r"|____/  |_| |_____\____|\____|\___/_/   \_\_| \_\____/ ",
+    )
+)
+
 
 def cmd_detect(args):
-    """Run the open-source steganography detector."""
+    """Run the steganography detector."""
     from stegguard.detector import main as detector_main
 
     detector_args = args if isinstance(args, list) else args.detect_args
@@ -25,9 +43,18 @@ def cmd_detect(args):
 
 
 def cmd_decode(args):
-    """Decode recognized hidden payloads using the OSS decoder."""
-    from stegguard.operations import decode_file
+    """Decode recognized hidden payloads."""
+    from stegguard.operations import decode_file, process_findings
 
+    if args.from_findings:
+        report = process_findings(
+            args.from_findings,
+            "decode",
+            min_severity=args.min_sev,
+            limits=limits_from_namespace(args),
+        )
+        print(json.dumps(report, indent=2, ensure_ascii=False))
+        return 2 if report["failed"] else 0
     print(
         json.dumps(
             decode_file(args.input, limits=limits_from_namespace(args)),
@@ -40,8 +67,22 @@ def cmd_decode(args):
 
 def cmd_sanitize(args):
     """Write a sanitized copy, or overwrite only with dual confirmation."""
-    from stegguard.operations import sanitize_file
+    from stegguard.operations import process_findings, sanitize_file
 
+    if args.from_findings:
+        report = process_findings(
+            args.from_findings,
+            "sanitize",
+            min_severity=args.min_sev,
+            output_dir=args.output_dir,
+            in_place=args.in_place,
+            confirm=args.confirm,
+            profile=args.profile,
+            channels=args.channels,
+            limits=limits_from_namespace(args),
+        )
+        print(json.dumps(report, indent=2, ensure_ascii=False))
+        return 2 if report["failed"] else 0
     result = sanitize_file(
         args.input,
         args.output,
@@ -92,34 +133,141 @@ def cmd_watermark(args):
     return 2 if incomplete else 0
 
 
-def build_parser():
-    parser = argparse.ArgumentParser(
-        prog="stegguard",
-        description="StegGuard — steganography detection toolkit",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-Examples:
-  stegguard detect suspicious.txt
-  stegguard detect suspicious.txt --html report.html
+def _add_batch_arguments(parser):
+    parser.add_argument(
+        "--from-findings",
+        metavar="FILE.json",
+        help="Process every flagged file in a report from 'stegguard detect --json'",
+    )
+    parser.add_argument(
+        "--min-sev",
+        choices=SEVERITY_LEVELS,
+        help="With --from-findings, only process files at or above this severity (default: low)",
+    )
+
+
+def _validate_batch_arguments(parser, args):
+    """Enforce that a command has exactly one input and only compatible options."""
+    if bool(args.input) == bool(args.from_findings):
+        parser.error("provide either an input file or --from-findings, not both or neither")
+    if args.from_findings:
+        if args.command == "sanitize" and args.output:
+            parser.error("--output cannot be combined with --from-findings; use --output-dir")
+        if args.min_sev is None:
+            args.min_sev = "low"
+        return
+    if args.min_sev is not None:
+        parser.error("--min-sev requires --from-findings")
+    if args.command == "sanitize" and args.output_dir:
+        parser.error("--output-dir requires --from-findings")
+
+
+class _BannerParser(StyledParser):
+    """Top-level parser that prints the banner above its help, but not above errors."""
+
+    def format_help(self) -> str:
+        return f"{color(BANNER, DARK_CYAN)}\n\n{super().format_help()}"
+
+
+_MAIN_DESCRIPTION = """\
+Find, read, and remove hidden content in text and binary files.
+
+typical workflow:
   stegguard detect . -r --json findings.json
+  stegguard decode --from-findings findings.json
+  stegguard sanitize --from-findings findings.json --output-dir clean/
+"""
+
+_MAIN_EPILOG = """\
+exit codes:
+  0  Finished (for detect: nothing found)
+  1  Hidden content found (detect only)
+  2  Invalid input, or the run couldn't finish
+
+Run 'stegguard COMMAND --help' for options and examples.
+"""
+
+_DECODE_DESCRIPTION = """\
+Extract hidden payloads and print them as JSON, without changing the file.
+
+Text files: zero-width characters, trailing whitespace, and line endings.
+Binary files: metadata from PNG, JPEG, GIF, TIFF, ZIP, MP3, and PDF, plus
+readable text in the pixel LSBs of PNG, BMP, GIF, and TIFF.
+
+An empty result doesn't prove a file is clean: encrypted or scattered payloads
+can't be read.
+"""
+
+_DECODE_EPILOG = """\
+examples:
   stegguard decode suspicious.txt
+  stegguard decode photo.png
+  stegguard decode --from-findings findings.json --min-sev high
+
+exit codes:
+  0  Finished, even if nothing was found or the format isn't supported
+  2  Invalid input, or a file couldn't be read
+"""
+
+_SANITIZE_DESCRIPTION = """\
+Write a cleaned copy and print a JSON report of every change.
+
+The copy is saved next to the input as NAME.sanitized.EXT, and an existing file
+is never overwritten. The original stays untouched unless you pass --in-place
+--confirm.
+"""
+
+_SANITIZE_EPILOG = """\
+examples:
   stegguard sanitize suspicious.txt
-  stegguard watermark image.png --c2pa-tool c2patool --html report.html
-        """,
+  stegguard sanitize photo.png --profile destructive
+  stegguard sanitize --from-findings findings.json --output-dir clean/
+
+exit codes:
+  0  Finished. This doesn't mean the file is clean: check "sanitization_status"
+     in the report, where anything but SANITIZED means hidden content may remain
+  2  Invalid input, or a file couldn't be processed
+"""
+
+_WATERMARK_DESCRIPTION = """\
+Check a file for watermark signals and Content Credentials, and print the
+analysis as JSON. Optionally validate C2PA with the official c2patool
+executable.
+"""
+
+_WATERMARK_EPILOG = """\
+examples:
+  stegguard watermark image.png
+  stegguard watermark image.png --json report.json --html report.html
+  stegguard watermark image.png --c2pa-tool c2patool
+
+exit codes:
+  0  Analysis finished, whether or not any signals were found
+  2  Invalid input, or the analysis couldn't finish
+"""
+
+
+def build_parser():
+    parser = _BannerParser(
+        prog="stegguard",
+        description=_MAIN_DESCRIPTION,
+        formatter_class=CommandListFormatter,
+        epilog=_MAIN_EPILOG,
     )
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
 
-    sub = parser.add_subparsers(dest="command", metavar="COMMAND")
+    sub = parser.add_subparsers(
+        title="commands",
+        dest="command",
+        metavar="COMMAND",
+        # argparse gives subparsers the parent's class by default; keep the banner off them.
+        parser_class=StyledParser,
+    )
     sub.required = True
 
     # --- detect subcommand ---
-    p_detect = sub.add_parser(
-        "detect",
-        help="Detect steganographic content (OSS)",
-        description="Analyse a file or directory for hidden steganographic signals. "
-        "Accepts all flags from steg_detector: paths, -v, -d, -r, --ext, "
-        "--html, --html-per-folder, --json, --no-venv.",
-    )
+    # main() sends "detect" straight to the detector's own parser; this entry lists it.
+    p_detect = sub.add_parser("detect", help="Scan files and folders for hidden content")
     p_detect.add_argument(
         "detect_args",
         nargs=argparse.REMAINDER,
@@ -130,21 +278,35 @@ Examples:
     # --- decode subcommand ---
     p_decode = sub.add_parser(
         "decode",
-        help="Decode recognized hidden payloads (OSS)",
-        description="Extract recognized hidden payloads without changing the input.",
+        help="Extract hidden payloads without changing the file",
+        description=_DECODE_DESCRIPTION,
+        epilog=_DECODE_EPILOG,
     )
-    p_decode.add_argument("input", help="File to decode")
+    p_decode.add_argument(
+        "input", nargs="?", help="File to decode (or use --from-findings instead)"
+    )
+    _add_batch_arguments(p_decode)
     add_limit_arguments(p_decode)
     p_decode.set_defaults(func=cmd_decode)
 
     p_sanitize = sub.add_parser(
         "sanitize",
-        help="Remove recognized hidden content safely (OSS)",
-        description="Write a sanitized copy by default and emit a JSON change report.",
+        help="Write cleaned copies and leave the originals alone",
+        description=_SANITIZE_DESCRIPTION,
+        epilog=_SANITIZE_EPILOG,
     )
-    p_sanitize.add_argument("input", help="File to sanitize")
+    p_sanitize.add_argument(
+        "input", nargs="?", help="File to sanitize (or use --from-findings instead)"
+    )
+    _add_batch_arguments(p_sanitize)
+    p_sanitize.add_argument(
+        "--output-dir",
+        help="With --from-findings, write sanitized copies under this directory",
+    )
     p_sanitize.add_argument("-o", "--output", help="Sanitized output path")
-    p_sanitize.add_argument("--in-place", action="store_true", help="Overwrite the input")
+    p_sanitize.add_argument(
+        "--in-place", action="store_true", help="Overwrite the input (requires --confirm)"
+    )
     p_sanitize.add_argument(
         "--confirm",
         action="store_true",
@@ -155,8 +317,10 @@ Examples:
         choices=SANITIZE_PROFILES,
         default="conservative",
         help=(
-            "conservative (default) keeps hidden characters where they have a legitimate use; "
-            "destructive removes all of them and can change legitimate text"
+            "conservative (default) keeps hidden characters with a legitimate use and color "
+            "or C2PA data, and clears pixel LSBs only when it finds evidence of a payload, "
+            "warning if it keeps them. destructive removes all of these, including LSBs, "
+            "and can change legitimate text"
         ),
     )
     p_sanitize.add_argument(
@@ -164,18 +328,21 @@ Examples:
         dest="channels",
         action="append",
         choices=SANITIZE_CHANNELS,
-        help="Run only this transformation; repeat to select several (default: all)",
+        metavar="CHANNEL",
+        help=(
+            "Run only this transformation; repeat to select several (default: all for the "
+            f"file type). Text files: {', '.join(TEXT_SANITIZE_CHANNELS)}. "
+            f"Binary files: {', '.join(BINARY_SANITIZE_CHANNELS)}"
+        ),
     )
     add_limit_arguments(p_sanitize)
     p_sanitize.set_defaults(func=cmd_sanitize)
 
     p_watermark = sub.add_parser(
         "watermark",
-        help="Analyze watermark signals and Content Credentials (OSS)",
-        description=(
-            "Run categorized watermark analysis. Optionally validate C2PA with "
-            "the official c2patool executable."
-        ),
+        help="Check watermark signals and Content Credentials",
+        description=_WATERMARK_DESCRIPTION,
+        epilog=_WATERMARK_EPILOG,
     )
     p_watermark.add_argument("input", help="File to analyze")
     p_watermark.add_argument(
@@ -190,8 +357,10 @@ Examples:
         action="store_true",
         help="Allow bounded HTTPS retrieval of remote C2PA manifests",
     )
-    p_watermark.add_argument("--json", dest="json_output", help="Write JSON analysis")
-    p_watermark.add_argument("--html", help="Write an HTML report")
+    p_watermark.add_argument(
+        "--json", dest="json_output", metavar="OUTPUT.json", help="Write JSON analysis"
+    )
+    p_watermark.add_argument("--html", metavar="OUTPUT.html", help="Write an HTML report")
     add_limit_arguments(p_watermark)
     p_watermark.set_defaults(func=cmd_watermark)
 
@@ -205,6 +374,8 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_detect(arguments[1:])
     parser = build_parser()
     args = parser.parse_args(arguments)
+    if args.command in ("decode", "sanitize"):
+        _validate_batch_arguments(parser, args)
     if args.command == "sanitize" and args.in_place != args.confirm:
         parser.error("overwriting requires both --in-place and --confirm")
     try:

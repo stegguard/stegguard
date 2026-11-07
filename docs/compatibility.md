@@ -29,7 +29,8 @@ major release if machine contracts remain stable.
 | `2` | Invocation was invalid or the scan was incomplete |
 
 `decode`, `sanitize`, and `watermark` return `0` on a completed operation and
-`2` on invalid input or an incomplete operation. Findings from `watermark` are
+`2` on invalid input or an incomplete operation. With `--from-findings`, any file
+that could not be processed makes the operation incomplete. Findings from `watermark` are
 reported in JSON; only `detect` currently uses `1` for a positive result.
 
 ### What counts as an incomplete scan

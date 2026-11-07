@@ -3,11 +3,14 @@
 
 from __future__ import annotations
 
+import argparse
 import time
 import zlib
 from dataclasses import asdict, dataclass, fields
 from pathlib import Path
 from typing import Any, Mapping
+
+from stegguard.help_format import HelpAllAction
 
 
 class ResourceLimitError(ValueError):
@@ -47,16 +50,25 @@ _CLI_LIMIT_FIELDS = (
 
 
 def add_limit_arguments(parser: Any) -> None:
-    """Add the shared resource-budget options to an argparse parser."""
+    """Add the resource-budget options, hidden from help until --help-all is passed."""
     group = parser.add_argument_group("resource limits")
+    hidden = []
     for name, value_type, help_text in _CLI_LIMIT_FIELDS:
-        group.add_argument(
+        action = group.add_argument(
             "--" + name.replace("_", "-"),
             dest=name,
             type=value_type,
             default=None,
-            help=help_text,
+            help=argparse.SUPPRESS,
         )
+        default = getattr(DEFAULT_SCAN_LIMITS, name)
+        hidden.append((action, f"{help_text} (default: {default})"))
+    parser.add_argument(
+        "--help-all",
+        action=HelpAllAction,
+        hidden=hidden,
+        help="Show this help including the resource limit options (--max-*)",
+    )
 
 
 def limits_from_namespace(namespace: Any) -> ScanLimits:

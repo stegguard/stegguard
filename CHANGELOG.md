@@ -5,8 +5,30 @@ the Python API, CLI contract, and versioned report schema.
 
 ## Unreleased
 
+### Added
+
+- `stegguard decode` reads metadata fields from PNG, JPEG, GIF, TIFF, ZIP, MP3, and
+  PDF files, and readable pixel LSB payloads from PNG, BMP, GIF, and TIFF images.
+- `stegguard sanitize` removes that metadata and clears pixel LSBs through new
+  `metadata` and `lsb` channels.
+- `--from-findings`, `--min-sev`, and `--output-dir` process every flagged file in a
+  detector report, also available as `stegguard.process_findings`.
+- A `PARTIAL` sanitization status for files with a known remaining gap.
+- An ASCII banner, the detect-decode-sanitize workflow, and exit codes on `stegguard --help`.
+- Examples and exit codes on every command's `--help`.
+- `--help-all` on every command, which also lists the resource limit options and
+  their defaults.
+- Bold headings and a colored banner in help shown on a terminal.
+- Colored output now honors the `NO_COLOR` environment variable.
+
 ### Changed
 
+- The `--max-*` resource limit options are hidden from `--help`; they still work and
+  are listed by `--help-all`.
+- Sanitizing a supported binary format now writes a cleaned copy instead of an
+  identical one. Unsupported and unparseable files are still copied unchanged and
+  marked `NO_OP_UNSUPPORTED`. To keep the old behavior for a format, select only
+  text channels with `--channel`.
 - CI now tests Python 3.13 and 3.14 on Windows and macOS, in addition to Linux.
 - **Security-relevant default:** `sanitize` now uses a `conservative` profile that
   keeps non-Latin text, emoji sequences, script joiners, Markdown hard breaks, and

@@ -388,7 +388,7 @@ class TestColor(unittest.TestCase):
             self.assertIn("hi", sd.color("hi", sd.RED))
 
     def test_codes_present_in_tty(self):
-        with patch("sys.stdout") as m:
+        with patch("sys.stdout") as m, patch.dict("os.environ", {"NO_COLOR": ""}):
             m.isatty.return_value = True
             self.assertIn("\x1b[", sd.color("x"))
 

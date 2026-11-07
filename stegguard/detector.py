@@ -327,6 +327,7 @@ BINARY_SUSPICIOUS_BYTES: dict[bytes, tuple[str, str, str]] = _build_binary_map()
 # ─── ANSI Colors ──────────────────────────────────────────────────────────────
 
 from stegguard.common import RED, YELLOW, GREEN, CYAN, BOLD, DIM, RESET, color, use_utf8_output
+from stegguard.help_format import StyledParser
 
 
 # ─── Detection ────────────────────────────────────────────────────────────────
@@ -3620,12 +3621,28 @@ def collect_files(root: Path, extensions: set, recursive: bool, skip_venvs: bool
 # ─── Entry point ──────────────────────────────────────────────────────────────
 
 
-def main(argv: list[str] | None = None) -> int:
-    use_utf8_output()
-    parser = argparse.ArgumentParser(
+DETECT_EPILOG = """\
+examples:
+  stegguard detect suspicious.txt
+  stegguard detect . -r --no-venv --html report.html
+  stegguard detect . -r --json findings.json
+
+exit codes:
+  0  Scan finished, nothing found
+  1  Scan finished, hidden content found
+  2  Invalid input, or the scan couldn't finish
+"""
+
+
+def build_detect_parser() -> StyledParser:
+    parser = StyledParser(
         prog="stegguard detect",
-        description="Detect hidden steganographic characters across all supported file types",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
+        description=(
+            "Scan files and folders for hidden content: zero-width characters, homoglyphs,\n"
+            "bidirectional overrides, trailing whitespace, mixed line endings, binary\n"
+            "metadata, and pixel LSB signals."
+        ),
+        epilog=DETECT_EPILOG,
     )
     parser.add_argument("--version", action="version", version=f"stegguard {__version__}")
     parser.add_argument("paths", nargs="+", help="Files or directories to scan")
@@ -3639,10 +3656,14 @@ def main(argv: list[str] | None = None) -> int:
         "-d",
         "--decode",
         action="store_true",
-        help="Attempt to decode zero-width character messages",
+        help="Also decode zero-width messages in this report; "
+        "'stegguard decode' covers every payload type",
     )
     parser.add_argument(
-        "-r", "--recursive", action="store_true", help="Recurse into subdirectories"
+        "-r",
+        "--recursive",
+        action="store_true",
+        help="Recurse into subdirectories (default: top level only)",
     )
     parser.add_argument(
         "--ext",
@@ -3670,7 +3691,8 @@ def main(argv: list[str] | None = None) -> int:
         "--json",
         metavar="OUTPUT.json",
         dest="json_out",
-        help="Write all scan results to a JSON file consumable by steg_decoder.py",
+        help="Write results to a JSON file for the --from-findings option of "
+        "'stegguard decode' and 'stegguard sanitize'",
     )
     parser.add_argument(
         "--no-venv",
@@ -3680,6 +3702,12 @@ def main(argv: list[str] | None = None) -> int:
         "(venv, node_modules, vendor, target, etc.)",
     )
     add_limit_arguments(parser)
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    use_utf8_output()
+    parser = build_detect_parser()
     args = parser.parse_args(argv)
     try:
         scan_limits = limits_from_namespace(args)

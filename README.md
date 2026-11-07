@@ -106,7 +106,9 @@ Scan a repository and save both report formats:
 stegguard detect ./repo -r --json findings.json --html report.html
 ```
 
-Decode recognized text-carried channels without modifying the source:
+Decode recognized channels without modifying the source. Text files report
+zero-width, whitespace, and line-ending payloads. Binary files report metadata
+fields and readable pixel LSB payloads:
 
 ```bash
 stegguard decode suspicious.txt
@@ -135,11 +137,13 @@ stegguard watermark image.png --c2pa-tool c2patool --html provenance.html
 | Command | What it does |
 | --- | --- |
 | `stegguard detect` | Scans files or directories for hidden-content signals |
-| `stegguard decode` | Extracts recognized text-carried payloads without changing the input |
+| `stegguard decode` | Extracts recognized payloads without changing the input |
 | `stegguard sanitize` | Writes a safer copy and reports every change |
 | `stegguard watermark` | Analyzes watermark, fingerprint, and provenance evidence |
 
-Run `stegguard COMMAND --help` for command-specific options.
+Run `stegguard COMMAND --help` for options, examples, and exit codes, or
+`stegguard COMMAND --help-all` to include the resource limit options. Set
+`NO_COLOR` to turn off colored terminal output.
 
 For `detect`, exit status `0` means a completed clean scan, `1` means a
 completed scan with findings, and `2` means invalid input or an incomplete
@@ -230,12 +234,54 @@ stegguard sanitize suspicious.txt --profile destructive
 ```
 
 To run only some transformations, repeat `--channel` with `zero_width`, `bidi`,
-`homoglyphs`, `trailing_whitespace`, or `line_endings`. Changes to source code can
+`homoglyphs`, `trailing_whitespace`, `line_endings`, `metadata`, or `lsb`. Changes to source code can
 alter its behavior, including string literals, so review the diff.
 
-Unsupported binary formats are copied byte-for-byte and marked
-`NO_OP_UNSUPPORTED`. StegGuard does not push binary data through a text cleaner
-and hope for the best.
+### Binary files
+
+Binary sanitization understands each format and never deletes bytes it cannot
+identify. It uses the `metadata` and `lsb` channels:
+
+| Format | Metadata | Pixel LSBs |
+| --- | --- | --- |
+| PNG | Removes text and unknown chunks, and data after `IEND` | Cleared; palette images become RGB or RGBA so colors survive |
+| BMP | None | Cleared in place for uncompressed 24- and 32-bit images |
+| TIFF | Blanks ASCII, XMP, and IPTC tags in the first directory | Cleared in place for uncompressed 8-bit strips |
+| GIF | Removes comments, plain text, application blocks, and appended data | Not cleared: palette indices cannot lose a bit without changing colors |
+| JPEG | Removes comments and EXIF, XMP, and IPTC segments, and appended data | Not applicable: pixels are transform-coded |
+| ZIP, DOCX, XLSX, PPTX | Removes archive and entry comments | Not applicable |
+| MP3 | Removes ID3v1 and ID3v2 tags | Not applicable |
+| PDF | Blanks Info strings and uncompressed XMP at the same length | Not applicable |
+
+The `conservative` profile keeps color management and C2PA provenance data, and
+clears pixel LSBs only when analysis or decoding finds evidence of a payload. The
+`destructive` profile removes that data too and always clears pixel LSBs.
+
+`sanitization_status` says how far this went:
+
+- `SANITIZED`: every channel the format exposes was handled
+- `PARTIAL`: something was removed or kept with a known gap, such as files inside
+  a ZIP or JPEG image data; `warnings` names each gap
+- `NO_OP_UNSUPPORTED`: the format is unsupported or the file did not parse, so the
+  copy is byte-for-byte identical
+
+LSB decoding finds readable text that starts at the first sample. Encrypted,
+compressed, length-prefixed, or randomly spread payloads look like noise, so an
+empty result does not prove an image is clean.
+
+### Batch processing
+
+Pass a detector report to process every flagged file:
+
+```bash
+stegguard detect . -r --json findings.json
+stegguard decode --from-findings findings.json --min-sev high
+stegguard sanitize --from-findings findings.json --output-dir clean/
+```
+
+One file failing does not stop the batch. Files that are missing, or whose scan
+never finished, are reported rather than skipped, and the command then exits `2`.
+Each sanitized file reports `clean_after`, the result of re-scanning its output.
 
 ## Reports built for review
 

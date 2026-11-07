@@ -11,7 +11,7 @@ __author__ = "StegGuard"
 __license__ = "Apache-2.0"
 
 from stegguard.detector import analyze_file  # primary public API
-from stegguard.operations import decode_file, sanitize_file
+from stegguard.operations import decode_file, process_findings, sanitize_file
 from stegguard.watermark import scan_file
 
 __all__ = [
@@ -20,6 +20,7 @@ __all__ = [
     "ScanLimits",
     "analyze_file",
     "decode_file",
+    "process_findings",
     "sanitize_file",
     "scan_file",
 ]

@@ -14,9 +14,7 @@ from stegguard.cli import main as cli_main
 from stegguard.detector import analyze_file, write_json_output
 from stegguard.operations import process_findings
 
-ZERO_WIDTH_OK = "".join(
-    "​" if bit == "0" else "‌" for byte in b"OK" for bit in f"{byte:08b}"
-)
+ZERO_WIDTH_OK = "".join("​" if bit == "0" else "‌" for byte in b"OK" for bit in f"{byte:08b}")
 
 
 def _hidden_file(directory: Path, name: str = "flagged.txt") -> Path:
@@ -391,7 +389,9 @@ def test_cli_batch_decode_prints_a_json_report_and_exits_zero(tmp_path, capsys):
     code = cli_main(["decode", "--from-findings", str(findings)])
 
     assert code == 0
-    assert json.loads(capsys.readouterr().out)["results"][0]["result"]["zero_width"]["decoded"] == "OK"
+    assert (
+        json.loads(capsys.readouterr().out)["results"][0]["result"]["zero_width"]["decoded"] == "OK"
+    )
 
 
 def test_cli_batch_exits_two_when_any_file_fails(tmp_path, capsys):

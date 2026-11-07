@@ -18,9 +18,7 @@ from stegguard.limits import ScanLimits
 from stegguard.operations import decode_file, sanitize_file
 
 POLICY = ScanLimits()
-ZERO_WIDTH_HI = "".join(
-    "​" if bit == "0" else "‌" for byte in b"Hi" for bit in f"{byte:08b}"
-)
+ZERO_WIDTH_HI = "".join("​" if bit == "0" else "‌" for byte in b"Hi" for bit in f"{byte:08b}")
 
 
 def _chunk(kind: bytes, data: bytes) -> bytes:
@@ -516,7 +514,9 @@ def test_sanitize_changes_each_sample_by_at_most_one(tmp_path):
 
 
 def test_sanitized_payload_can_no_longer_be_decoded(tmp_path):
-    output, result = _sanitized(tmp_path, "image.png", _png(_embed(b"attack at dawn", 1200), 400, 1))
+    output, result = _sanitized(
+        tmp_path, "image.png", _png(_embed(b"attack at dawn", 1200), 400, 1)
+    )
 
     clean = tmp_path / "clean.png"
     clean.write_bytes(output)
@@ -543,7 +543,9 @@ def test_conservative_sanitize_keeps_lsbs_without_evidence_and_warns(tmp_path):
 
 
 def test_conservative_sanitize_clears_lsbs_when_a_payload_decodes(tmp_path):
-    output, result = _sanitized(tmp_path, "image.png", _png(_embed(b"attack at dawn", 1200), 400, 1))
+    output, result = _sanitized(
+        tmp_path, "image.png", _png(_embed(b"attack at dawn", 1200), 400, 1)
+    )
 
     assert result["changes"]["lsb_samples_cleared"] > 0
     assert all(value & 1 == 0 for value in _load_pixels_png(output)[0]["R"])

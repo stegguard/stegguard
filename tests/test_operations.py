@@ -134,40 +134,6 @@ def test_sanitize_cli_requires_confirmation_for_in_place(tmp_path, monkeypatch):
     assert source.read_text(encoding="utf-8") == "hello\u200b"
 
 
-def test_no_op_sanitization_preserves_valid_embedded_provenance(tmp_path):
-    source = tmp_path / "clean.svg"
-    original = b"<svg><!-- c2pa manifest --><text>clean</text></svg>"
-    source.write_bytes(original)
-
-    def validator(manifest, content, location):
-        return {"status": "VALID", "provider": "Example"}
-
-    result = sanitize_file(source, provenance_validator=validator)
-
-    assert Path(result["sanitized_path"]).read_bytes() == original
-    assert result["provenance_before"]["status"] == "VALID"
-    assert result["provenance_after"]["status"] == "VALID"
-    assert result["provenance_impact"] == "preserved"
-
-
-def test_changed_sanitization_reports_provenance_invalidation(tmp_path):
-    source = tmp_path / "marked.svg"
-    original = b"<svg><!-- c2pa manifest --><text>hidden\xe2\x80\x8b</text></svg>"
-    source.write_bytes(original)
-
-    def validator(manifest, content, location):
-        if content == original:
-            return {"status": "VALID", "provider": "Example"}
-        return {"status": "TAMPERED", "validation_errors": ["content hash mismatch"]}
-
-    result = sanitize_file(source, provenance_validator=validator)
-
-    assert result["changed"] is True
-    assert result["provenance_before"]["status"] == "VALID"
-    assert result["provenance_after"]["status"] == "TAMPERED"
-    assert result["provenance_impact"] == "invalidated"
-
-
 @pytest.mark.skipif(os.name == "nt", reason="POSIX permission bits are not portable")
 def test_in_place_sanitization_preserves_file_permissions(tmp_path):
     source = tmp_path / "executable.sh"
@@ -201,34 +167,18 @@ def test_copy_writer_cannot_overwrite_a_racing_destination(tmp_path):
     assert destination.read_bytes() == b"other writer"
 
 
-def test_no_op_sanitization_copies_valid_sidecar_provenance(tmp_path):
-    source = tmp_path / "asset.jpg"
-    source.write_bytes(b"\xff\xd8plain\xff\xd9")
-    sidecar = tmp_path / "asset.jpg.c2pa"
-    sidecar.write_bytes(b"binary-c2pa")
-
-    def validator(manifest, content, location):
-        assert manifest == b"binary-c2pa"
-        return {"status": "VALID", "provider": "Example"}
-
-    result = sanitize_file(source, provenance_validator=validator)
-    destination = Path(result["sanitized_path"])
-
-    assert destination.with_name(destination.name + ".c2pa").read_bytes() == b"binary-c2pa"
-    assert result["provenance_impact"] == "preserved"
-
-
-def test_binary_sanitization_is_an_exact_no_op_copy(tmp_path):
-    source = tmp_path / "image.png"
-    original = b"\x89PNG\r\n\x1a\n\x00\xffbinary\r\ndata"
-    source.write_bytes(original)
+def test_plain_text_reports_unsupported_provenance(tmp_path):
+    source = tmp_path / "asset.txt"
+    source.write_bytes(b"plain")
+    source.with_name(source.name + ".c2pa").write_bytes(b"binary-c2pa")
 
     result = sanitize_file(source)
+    destination = Path(result["sanitized_path"])
 
-    assert Path(result["sanitized_path"]).read_bytes() == original
-    assert result["sanitization_status"] == "NO_OP_UNSUPPORTED"
-    assert result["changed"] is False
-    assert result["diff"] == ""
+    assert destination.read_bytes() == b"plain"
+    assert result["provenance_before"]["status"] == "UNSUPPORTED"
+    assert result["provenance_after"]["status"] == "UNSUPPORTED"
+    assert not destination.with_name(destination.name + ".c2pa").exists()
 
 
 def test_binary_decode_reports_not_supported_without_interpreting_bytes(tmp_path):

@@ -42,5 +42,6 @@ A mixed fixture reconciles direct and recursive scan results across HTML and JSO
 and verifies completed, partial, unsupported, skipped, incomplete, and
 validation-failed outcomes from findings-based processing.
 
-The full regression suite still includes legacy expectations for rewriting
-formats that are now inspection-only and for rewriting Latin-1 text.
+Public sanitizer regression tests verify that inspection-only formats and
+Latin-1 text are rejected without producing an output. Binary transformation
+preservation tests exercise the internal rewrite engine directly.

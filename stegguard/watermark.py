@@ -234,9 +234,15 @@ def _scan_structural(source: Path, raw: bytes) -> list[DetectionFinding]:
     kind = container_format(raw, source.suffix.lower())
     suffix = kind or source.suffix.lower()
     if kind == ".sqlite":
-        return [_finding("STRUCTURAL", "unsupported_container",
-                         "SQLite database content inspection is unsupported.", 1.0,
-                         evidence={"format": "SQLite"})]
+        return [
+            _finding(
+                "STRUCTURAL",
+                "unsupported_container",
+                "SQLite database content inspection is unsupported.",
+                1.0,
+                evidence={"format": "SQLite"},
+            )
+        ]
 
     if raw.startswith(b"\x89PNG\r\n\x1a\n"):
         position = 8
@@ -327,7 +333,9 @@ def _scan_structural(source: Path, raw: bytes) -> list[DetectionFinding]:
                 size = len(raw) - position
             if size < header_size or position + size > len(raw):
                 break
-            if box_type in {b"free", b"skip"} and not any(memoryview(raw)[position + header_size : position + size]):
+            if box_type in {b"free", b"skip"} and not any(
+                memoryview(raw)[position + header_size : position + size]
+            ):
                 ordinary_padding.append(box_type.decode("ascii"))
             elif box_type in {b"uuid", b"free", b"skip"}:
                 private_boxes.append(box_type.decode("ascii"))
@@ -415,13 +423,17 @@ def _scan_format_metadata(source: Path, raw: bytes) -> list[DetectionFinding]:
                     except UnicodeDecodeError:
                         comment = ""
                     if "\u200b" in comment:
-                        findings.append(_finding(
-                            "METADATA", "decoded_metadata_marker",
-                            "Decoded archive comment contains a zero-width space.", 1.0,
-                            location=f"text:1:{comment.index(chr(0x200B)) + 1}",
-                            evidence={"field": "archive_comment", "codepoint": "U+200B"},
-                            risk="medium",
-                        ))
+                        findings.append(
+                            _finding(
+                                "METADATA",
+                                "decoded_metadata_marker",
+                                "Decoded archive comment contains a zero-width space.",
+                                1.0,
+                                location=f"text:1:{comment.index(chr(0x200B)) + 1}",
+                                evidence={"field": "archive_comment", "codepoint": "U+200B"},
+                                risk="medium",
+                            )
+                        )
                 if any(name.startswith("docProps/") for name in archive.namelist()):
                     fields.add("office_properties")
         except (OSError, zipfile.BadZipFile):
@@ -437,7 +449,7 @@ def _scan_format_metadata(source: Path, raw: bytes) -> list[DetectionFinding]:
             "File contains format-specific metadata or comment fields.",
             0.65,
             evidence={"fields": sorted(fields)},
-        )
+        ),
     ]
 
 
@@ -483,7 +495,8 @@ def _scan_text(text: str, source: Path) -> list[DetectionFinding]:
         declaration.strip() for style in parser.styles for declaration in style.split(";")
     }
     matched_layout = [
-        name for name, pattern in layout_patterns.items()
+        name
+        for name, pattern in layout_patterns.items()
         if any(re.fullmatch(pattern + r"(?:\s*!important)?", value, re.I) for value in declarations)
     ]
     if matched_layout:
@@ -966,7 +979,11 @@ def _extract_media_signatures(raw: bytes) -> list[tuple[str, bytes]]:
 def _document_member_tags(suffix: str, name: str) -> set[str]:
     if suffix == ".docx" and name == "word/document.xml":
         return {"t"}
-    if suffix == ".pptx" and name.startswith(("ppt/slides/", "ppt/notesSlides/")) and name.endswith(".xml"):
+    if (
+        suffix == ".pptx"
+        and name.startswith(("ppt/slides/", "ppt/notesSlides/"))
+        and name.endswith(".xml")
+    ):
         return {"t"}
     if suffix == ".xlsx" and (
         name == "xl/sharedStrings.xml"
@@ -1000,7 +1017,10 @@ def _document_tree(raw: bytes) -> ElementTree.Element:
 
 
 def _document_text_findings(
-    raw: bytes, tags: set[str], limit: int, deadline: float,
+    raw: bytes,
+    tags: set[str],
+    limit: int,
+    deadline: float,
 ) -> list[dict[str, Any]]:
     from stegguard.detector import ZERO_WIDTH_CHARS
 
@@ -1013,13 +1033,17 @@ def _document_text_findings(
         for column, char in enumerate("".join(element.itertext()), 1):
             if char not in ZERO_WIDTH_CHARS:
                 continue
-            findings.append(_finding(
-                "TEXT_PATTERN", "document_text_marker",
-                "Decoded document text contains an invisible character.", 1.0,
-                location=f"text:{index}:{column}",
-                evidence={"codepoint": f"U+{ord(char):04X}"},
-                risk="medium",
-            ).to_dict())
+            findings.append(
+                _finding(
+                    "TEXT_PATTERN",
+                    "document_text_marker",
+                    "Decoded document text contains an invisible character.",
+                    1.0,
+                    location=f"text:{index}:{column}",
+                    evidence={"codepoint": f"U+{ord(char):04X}"},
+                    risk="medium",
+                ).to_dict()
+            )
             if len(findings) > limit:
                 return findings
     return findings

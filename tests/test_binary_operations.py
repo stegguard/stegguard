@@ -147,11 +147,13 @@ def _zip(*, archive_comment: bytes = b"", entry_comment: bytes = b"") -> bytes:
     return stream.getvalue()
 
 
-def _sanitized(tmp_path: Path, name: str, raw: bytes, **options) -> tuple[bytes, dict]:
+def _sanitized(
+    tmp_path: Path, name: str, raw: bytes, *, profile="conservative", channels=("metadata", "lsb")
+) -> tuple[bytes, binary_ops.BinarySanitizeResult]:
     source = tmp_path / name
     source.write_bytes(raw)
-    result = sanitize_file(source, **options)
-    return Path(result["sanitized_path"]).read_bytes(), result
+    result = binary_ops.sanitize_binary(source, raw, tuple(channels), profile, POLICY)
+    return result.data, result
 
 
 # ── LSB decoding ──────────────────────────────────────────────────────────────
@@ -498,9 +500,9 @@ def test_destructive_sanitize_clears_every_rgb_png_lsb(tmp_path):
     assert (width, height, mode) == (400, 1, "RGB")
     assert channels["R"] == bytes(v & 0xFE for v in pixels[0::3])
     assert all(value & 1 == 0 for name in "RGB" for value in channels[name])
-    assert result["changes"]["lsb_samples_cleared"] == sum(v & 1 for v in pixels)
-    assert result["binary"]["lsb_method"] == "pixel-zero"
-    assert result["sanitization_status"] == "SANITIZED"
+    assert result.lsb_samples_cleared == sum(v & 1 for v in pixels)
+    assert result.lsb_method == "pixel-zero"
+    assert result.status == "SANITIZED"
 
 
 def test_sanitize_changes_each_sample_by_at_most_one(tmp_path):
@@ -521,7 +523,7 @@ def test_sanitized_payload_can_no_longer_be_decoded(tmp_path):
     clean = tmp_path / "clean.png"
     clean.write_bytes(output)
     assert decode_file(clean)["lsb"]["best"] is None
-    assert result["binary"]["lsb_method"] == "pixel-zero"
+    assert result.lsb_method == "pixel-zero"
 
 
 def test_sanitized_png_passes_the_detector_lsb_analysis(tmp_path):
@@ -537,9 +539,9 @@ def test_conservative_sanitize_keeps_lsbs_without_evidence_and_warns(tmp_path):
     output, result = _sanitized(tmp_path, "flat.png", original)
 
     assert output == original
-    assert result["changed"] is False
-    assert result["binary"]["lsb_method"] == "kept_no_evidence"
-    assert any("Use --profile destructive" in warning for warning in result["warnings"])
+    assert result.data == original
+    assert result.lsb_method == "kept_no_evidence"
+    assert any("Use --profile destructive" in warning for warning in result.warnings)
 
 
 def test_conservative_sanitize_clears_lsbs_when_a_payload_decodes(tmp_path):
@@ -547,7 +549,7 @@ def test_conservative_sanitize_clears_lsbs_when_a_payload_decodes(tmp_path):
         tmp_path, "image.png", _png(_embed(b"attack at dawn", 1200), 400, 1)
     )
 
-    assert result["changes"]["lsb_samples_cleared"] > 0
+    assert result.lsb_samples_cleared > 0
     assert all(value & 1 == 0 for value in _load_pixels_png(output)[0]["R"])
 
 
@@ -555,8 +557,8 @@ def test_lsb_channel_is_skipped_when_only_metadata_is_selected(tmp_path):
     pixels = _embed(b"attack at dawn", 1200)
     _, result = _sanitized(tmp_path, "image.png", _png(pixels, 400, 1), channels=["metadata"])
 
-    assert result["binary"]["lsb_method"] == "not_applied"
-    assert result["changes"]["lsb_samples_cleared"] == 0
+    assert result.lsb_method == "not_applied"
+    assert result.lsb_samples_cleared == 0
 
 
 def test_palette_png_is_expanded_so_colors_survive_lsb_clearing(tmp_path):
@@ -570,7 +572,7 @@ def test_palette_png_is_expanded_so_colors_survive_lsb_clearing(tmp_path):
     assert channels["R"] == bytes([0, 250])
     assert channels["G"] == bytes([250, 0])
     assert channels["B"] == bytes([0, 0])
-    assert result["binary"]["lsb_method"] == "palette-expanded"
+    assert result.lsb_method == "palette-expanded"
     assert b"PLTE" not in _chunks_in(output)
 
 
@@ -590,8 +592,8 @@ def test_palette_png_with_out_of_range_index_is_left_unchanged_and_reported(tmp_
     output, result = _sanitized(tmp_path, "image.png", raw, profile="destructive", channels=["lsb"])
 
     assert output == raw
-    assert result["sanitization_status"] == "PARTIAL"
-    assert result["binary"]["lsb_method"] == "unsupported"
+    assert result.status == "PARTIAL"
+    assert result.lsb_method == "unsupported"
 
 
 def test_color_key_transparency_follows_cleared_pixels(tmp_path):
@@ -608,8 +610,8 @@ def test_animated_png_lsbs_are_not_rewritten_because_frames_would_be_lost(tmp_pa
     output, result = _sanitized(tmp_path, "anim.png", raw)
 
     assert output == raw
-    assert result["binary"]["lsb_method"] == "unsupported"
-    assert result["sanitization_status"] == "PARTIAL"
+    assert result.lsb_method == "unsupported"
+    assert result.status == "PARTIAL"
 
 
 def test_sanitized_png_has_valid_chunk_checksums(tmp_path):
@@ -631,7 +633,7 @@ def test_bmp_lsbs_are_cleared_in_place_preserving_header_and_size(tmp_path):
 
     assert output[:54] == raw[:54]
     assert output[54:] == bytes([0x80, 0x82, 0x84, 0x00])
-    assert result["changes"]["lsb_samples_cleared"] == 3
+    assert result.lsb_samples_cleared == 3
 
 
 def test_sanitized_bmp_still_decodes(tmp_path):
@@ -646,7 +648,7 @@ def test_bmp_with_pixels_past_end_of_file_is_left_unchanged(tmp_path):
     output, result = _sanitized(tmp_path, "image.bmp", raw, profile="destructive")
 
     assert output == raw
-    assert result["sanitization_status"] == "NO_OP_UNSUPPORTED"
+    assert result.status == "NO_OP_UNSUPPORTED"
 
 
 def test_tiff_lsbs_are_cleared_in_place_preserving_layout(tmp_path):
@@ -658,7 +660,7 @@ def test_tiff_lsbs_are_cleared_in_place_preserving_layout(tmp_path):
     assert len(output) == len(raw)
     assert output[:-4] == raw[:-4]
     assert output[-4:] == bytes([0x80, 0x82, 0x82, 0x84])
-    assert result["changes"]["lsb_samples_cleared"] == 2
+    assert result.lsb_samples_cleared == 2
 
 
 def test_gif_lsbs_are_not_cleared_and_the_gap_is_reported(tmp_path):
@@ -666,9 +668,9 @@ def test_gif_lsbs_are_not_cleared_and_the_gap_is_reported(tmp_path):
     output, result = _sanitized(tmp_path, "image.gif", raw, profile="destructive", channels=["lsb"])
 
     assert output == raw
-    assert result["sanitization_status"] == "PARTIAL"
-    assert result["binary"]["lsb_method"] == "unsupported"
-    assert any("GIF palette indices" in warning for warning in result["warnings"])
+    assert result.status == "PARTIAL"
+    assert result.lsb_method == "unsupported"
+    assert any("GIF palette indices" in warning for warning in result.warnings)
 
 
 def test_lsb_sanitize_enforces_the_pixel_limit_and_writes_nothing(tmp_path):
@@ -676,7 +678,9 @@ def test_lsb_sanitize_enforces_the_pixel_limit_and_writes_nothing(tmp_path):
     source.write_bytes(_png(b"\x80" * 1200, 400, 1))
 
     with pytest.raises(ResourceLimitError, match="max_image_pixels"):
-        sanitize_file(source, limits={"max_image_pixels": 10}, profile="destructive")
+        binary_ops.sanitize_binary(
+            source, source.read_bytes(), ("lsb",), "destructive", ScanLimits(max_image_pixels=10)
+        )
 
     assert not (tmp_path / "image.sanitized.png").exists()
 
@@ -697,18 +701,18 @@ def test_sanitize_removes_png_text_chunks_and_appended_data(tmp_path):
     assert _chunks_in(output) == [b"IHDR", b"gAMA", b"IDAT", b"IEND"]
     assert b"hidden" not in output
     assert b"APPENDED" not in output
-    assert result["binary"]["metadata_removed"] == ["PNG:tEXt"]
-    assert result["changes"]["metadata_removed"] == 1
-    assert result["changes"]["trailing_bytes_removed"] == 16
-    assert result["policy"]["applied"] == ["metadata"]
+    assert result.metadata_removed == ["PNG:tEXt"]
+    assert len(result.metadata_removed) == 1
+    assert result.trailing_bytes_removed == 16
 
 
 def test_conservative_sanitize_keeps_png_color_and_provenance_chunks(tmp_path):
     extra = _chunk(b"gAMA", b"\x00\x00\xb1\x8f") + _chunk(b"caBX", b"manifest")
-    output, result = _sanitized(tmp_path, "image.png", _png(b"\x80" * 3, 1, 1, extra=extra))
+    raw = _png(b"\x80" * 3, 1, 1, extra=extra)
+    output, result = _sanitized(tmp_path, "image.png", raw)
 
     assert _chunks_in(output) == [b"IHDR", b"gAMA", b"caBX", b"IDAT", b"IEND"]
-    assert result["changed"] is False
+    assert result.data == raw
 
 
 def test_destructive_sanitize_removes_png_color_and_provenance_chunks(tmp_path):
@@ -746,16 +750,16 @@ def test_sanitize_removes_jpeg_comment_exif_and_appended_data(tmp_path):
     output, result = _sanitized(tmp_path, "photo.jpg", raw)
 
     assert output == _jpeg(jfif)
-    assert result["binary"]["metadata_removed"] == ["JPEG:COM", "JPEG:APP1"]
-    assert result["changes"]["trailing_bytes_removed"] == 8
-    assert any("display rotated" in warning for warning in result["warnings"])
+    assert result.metadata_removed == ["JPEG:COM", "JPEG:APP1"]
+    assert result.trailing_bytes_removed == 8
+    assert any("display rotated" in warning for warning in result.warnings)
 
 
 def test_jpeg_sanitize_reports_that_image_data_was_not_cleaned(tmp_path):
     _, result = _sanitized(tmp_path, "photo.jpg", _jpeg(_segment(0xFE, b"note")))
 
-    assert result["sanitization_status"] == "PARTIAL"
-    assert any("Transform-domain" in warning for warning in result["warnings"])
+    assert result.status == "PARTIAL"
+    assert any("Transform-domain" in warning for warning in result.warnings)
 
 
 def test_conservative_sanitize_keeps_jpeg_icc_and_c2pa_segments(tmp_path):
@@ -792,7 +796,7 @@ def test_sanitize_removes_zip_comments_and_the_archive_stays_valid(tmp_path):
     end_record = output.index(b"PK\x05\x06")
     assert struct.unpack_from("<H", output, end_record + 20)[0] == 0
     assert end_record + 22 == len(output)
-    assert sorted(result["binary"]["metadata_removed"]) == [
+    assert sorted(result.metadata_removed) == [
         "ZIP:archive-comment",
         "ZIP:entry-comment",
     ]
@@ -801,9 +805,9 @@ def test_sanitize_removes_zip_comments_and_the_archive_stays_valid(tmp_path):
 def test_zip_sanitize_warns_that_member_files_were_not_sanitized(tmp_path):
     _, result = _sanitized(tmp_path, "data.zip", _zip(archive_comment=b"note"))
 
-    assert result["sanitization_status"] == "PARTIAL"
-    assert any("Files inside the archive" in warning for warning in result["warnings"])
-    assert any("digital signature" in warning for warning in result["warnings"])
+    assert result.status == "PARTIAL"
+    assert any("Files inside the archive" in warning for warning in result.warnings)
+    assert any("digital signature" in warning for warning in result.warnings)
 
 
 def test_zip_without_comments_is_byte_identical_after_sanitize(tmp_path):
@@ -811,7 +815,7 @@ def test_zip_without_comments_is_byte_identical_after_sanitize(tmp_path):
     output, result = _sanitized(tmp_path, "data.zip", raw)
 
     assert output == raw
-    assert result["changed"] is False
+    assert result.data == raw
 
 
 def test_sanitize_removes_id3v2_and_id3v1_leaving_audio(tmp_path):
@@ -820,7 +824,7 @@ def test_sanitize_removes_id3v2_and_id3v1_leaving_audio(tmp_path):
     output, result = _sanitized(tmp_path, "song.mp3", raw)
 
     assert output == b"\xff\xfb\x90\x00AUDIO"
-    assert result["binary"]["metadata_removed"] == ["ID3v2", "ID3v1"]
+    assert result.metadata_removed == ["ID3v2", "ID3v1"]
 
 
 def test_sanitize_blanks_pdf_info_at_the_same_length_preserving_offsets(tmp_path):
@@ -829,8 +833,8 @@ def test_sanitize_blanks_pdf_info_at_the_same_length_preserving_offsets(tmp_path
 
     assert output == raw.replace(b"(Jane)", b"(    )").replace(b"(Doc)", b"(   )")
     assert len(output) == len(raw)
-    assert result["binary"]["metadata_removed"] == ["PDF:Author", "PDF:Title"]
-    assert result["sanitization_status"] == "PARTIAL"
+    assert result.metadata_removed == ["PDF:Author", "PDF:Title"]
+    assert result.status == "PARTIAL"
 
 
 def test_sanitize_blanks_uncompressed_pdf_xmp(tmp_path):
@@ -840,7 +844,7 @@ def test_sanitize_blanks_uncompressed_pdf_xmp(tmp_path):
 
     assert b"secret" not in output
     assert len(output) == len(raw)
-    assert result["binary"]["metadata_removed"] == ["PDF:XMP"]
+    assert result.metadata_removed == ["PDF:XMP"]
 
 
 def test_sanitize_removes_gif_comment_but_keeps_the_loop_extension(tmp_path):
@@ -850,8 +854,8 @@ def test_sanitize_removes_gif_comment_but_keeps_the_loop_extension(tmp_path):
     output, result = _sanitized(tmp_path, "image.gif", raw, channels=["metadata"])
 
     assert output == _gif(loop)
-    assert result["binary"]["metadata_removed"] == ["GIF:comment"]
-    assert result["changes"]["trailing_bytes_removed"] == 8
+    assert result.metadata_removed == ["GIF:comment"]
+    assert result.trailing_bytes_removed == 8
 
 
 def test_sanitize_blanks_tiff_ascii_tag_preserving_offsets(tmp_path):
@@ -861,7 +865,7 @@ def test_sanitize_blanks_tiff_ascii_tag_preserving_offsets(tmp_path):
     assert b"secret" not in output
     assert len(output) == len(raw)
     assert output[-4:] == b"\x80" * 4
-    assert result["binary"]["metadata_removed"] == ["TIFF:ImageDescription"]
+    assert result.metadata_removed == ["TIFF:ImageDescription"]
 
 
 # ── Binary safety ─────────────────────────────────────────────────────────────
@@ -885,8 +889,8 @@ def test_malformed_or_unknown_binaries_are_copied_exactly(tmp_path, name, raw, p
     output, result = _sanitized(tmp_path, name, raw, profile=profile)
 
     assert output == raw
-    assert result["sanitization_status"] == "NO_OP_UNSUPPORTED"
-    assert result["changed"] is False
+    assert result.status == "NO_OP_UNSUPPORTED"
+    assert result.data == raw
 
 
 def test_zero_width_byte_sequences_inside_compressed_data_are_not_deleted(tmp_path):
@@ -907,61 +911,19 @@ def test_text_channels_on_a_binary_file_change_nothing(tmp_path):
     output, result = _sanitized(tmp_path, "image.png", raw, channels=["zero_width"])
 
     assert output == raw
-    assert result["sanitization_status"] == "NO_OP_UNSUPPORTED"
-    assert result["policy"]["channels"] == ["zero_width"]
+    assert result.status == "NO_OP_UNSUPPORTED"
 
 
-def test_binary_channel_on_a_text_file_changes_nothing(tmp_path):
-    source = tmp_path / "note.txt"
-    source.write_text("visible​\n", encoding="utf-8")
-
-    result = sanitize_file(source, channels=["lsb"])
-
-    assert Path(result["sanitized_path"]).read_text(encoding="utf-8") == "visible​\n"
-    assert result["policy"]["applied"] == []
-
-
-def test_binary_report_default_policy_lists_binary_channels_only(tmp_path):
-    _, result = _sanitized(tmp_path, "image.png", _png(b"\x80" * 3, 1, 1))
-
-    assert result["policy"]["channels"] == ["metadata", "lsb"]
-
-
-def test_sanitizing_a_binary_preserves_the_original_file(tmp_path):
-    raw = _png(_embed(b"attack at dawn", 1200), 400, 1)
+@pytest.mark.parametrize("channels", [None, ["zero_width"], ["metadata"], ["lsb"]])
+@pytest.mark.parametrize("in_place", [False, True])
+def test_public_sanitizer_rejects_binary_without_writing(tmp_path, channels, in_place):
     source = tmp_path / "image.png"
+    raw = _png(b"\x80" * 3, 1, 1, extra=_chunk(b"tEXt", b"A\x00secret"))
     source.write_bytes(raw)
 
-    result = sanitize_file(source)
+    result = sanitize_file(source, channels=channels, in_place=in_place, confirm=in_place)
 
+    assert result["sanitization_status"] == "NOT_SUPPORTED"
+    assert result["errors"]
     assert source.read_bytes() == raw
-    assert result["original_preserved"] is True
-    assert result["sha256_before"] != result["sha256_after"]
-
-
-def test_in_place_binary_sanitize_overwrites_only_with_confirmation(tmp_path):
-    source = tmp_path / "image.png"
-    source.write_bytes(_png(b"\x80" * 3, 1, 1, extra=_chunk(b"tEXt", b"A\x00secret")))
-
-    result = sanitize_file(source, in_place=True, confirm=True)
-
-    assert b"secret" not in source.read_bytes()
-    assert result["original_preserved"] is False
-
-
-def test_metadata_change_reports_invalidated_provenance(tmp_path):
-    source = tmp_path / "image.png"
-    original = _png(b"\x80" * 3, 1, 1, extra=_chunk(b"tEXt", b"A\x00secret"))
-    source.write_bytes(original)
-    sidecar = tmp_path / "image.png.c2pa"
-    sidecar.write_bytes(b"manifest")
-
-    def validator(manifest, content, location):
-        if content == original:
-            return {"status": "VALID", "provider": "Example"}
-        return {"status": "TAMPERED", "validation_errors": ["hash mismatch"]}
-
-    result = sanitize_file(source, provenance_validator=validator)
-
-    assert result["provenance_before"]["status"] == "VALID"
-    assert result["provenance_impact"] == "invalidated"
+    assert list(tmp_path.iterdir()) == [source]

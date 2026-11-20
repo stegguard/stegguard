@@ -417,16 +417,17 @@ def analyze_file(
     kind = container_format(raw, suffix)
     signature = signature_format(raw)
     declared = FORMAT_ALIASES.get(suffix, suffix)
-    if (
-        (declared in BINARY_SIGNATURES and not signature and not kind)
-        or (suffix in STRUCTURED_ARCHIVES and kind != suffix)
+    if (declared in BINARY_SIGNATURES and not signature and not kind) or (
+        suffix in STRUCTURED_ARCHIVES and kind != suffix
     ):
         results["unsupported_reason"] = "Content does not match the declared file format."
         return results
     if kind or signature or suffix in BINARY_EXTENSIONS:
         results = analyze_binary_file(filepath, policy, raw=raw)
         results["lsb_analysis"] = (
-            analyze_lsb_image(filepath, verbose, policy) if not kind and signature == declared and suffix in LSB_FORMATS else None
+            analyze_lsb_image(filepath, verbose, policy)
+            if not kind and signature == declared and suffix in LSB_FORMATS
+            else None
         )
         if results["lsb_analysis"] is not None:
             results["checks_run"].append("Pixel LSB")
@@ -496,12 +497,16 @@ def analyze_file(
                 TrailingFinding(line_num, trailing, trail_byte)
             )
 
-        standard_joiners = {
-            match.start() + index
-            for match in _standard_emoji_sequences().finditer(line)
-            for index, char in enumerate(match.group())
-            if char == "\u200d"
-        } if "\u200d" in line else set()
+        standard_joiners = (
+            {
+                match.start() + index
+                for match in _standard_emoji_sequences().finditer(line)
+                for index, char in enumerate(match.group())
+                if char == "\u200d"
+            }
+            if "\u200d" in line
+            else set()
+        )
 
         # Character-level scan
         byte_offset = line_byte_offset
@@ -1409,8 +1414,11 @@ def result_to_json_dict(r: dict) -> dict:
         "file": r["file"],
         "file_mode": r.get("file_mode", "text"),
         "inspection_status": (
-            "INCOMPLETE" if result_is_incomplete(r) else
-            "NOT_SUPPORTED" if r.get("unsupported_reason") else "INSPECTED"
+            "INCOMPLETE"
+            if result_is_incomplete(r)
+            else "NOT_SUPPORTED"
+            if r.get("unsupported_reason")
+            else "INSPECTED"
         ),
         "unsupported_reason": r.get("unsupported_reason"),
         "checks_run": r.get("checks_run", []),
@@ -1501,7 +1509,8 @@ def write_json_output(all_results: list, path: str, excluded=()) -> None:
         "clean_files": sum(
             1
             for result in all_results
-            if not result_is_flagged(result) and not result_is_incomplete(result)
+            if not result_is_flagged(result)
+            and not result_is_incomplete(result)
             and not result.get("unsupported_reason")
         ),
         "results": serialized,
@@ -1811,8 +1820,7 @@ def generate_html_report(all_results, output_path, excluded=()):
     incomplete_files = sum(1 for result in all_results if result_is_incomplete(result))
     unsupported_files = sum(bool(result.get("unsupported_reason")) for result in all_results)
     files_with_unavailable_checks = sum(
-        bool(_watermark_unchecked_notes(result.get("watermark") or {}))
-        for result in all_results
+        bool(_watermark_unchecked_notes(result.get("watermark") or {})) for result in all_results
     )
     zw_total = sum(len(r["zero_width"]) for r in all_results)
     hg_total = sum(len(r["homoglyphs"]) for r in all_results)
@@ -2278,7 +2286,8 @@ def generate_html_report(all_results, output_path, excluded=()):
             ["<details><summary>Skipped inputs and reasons</summary><ul>"]
             + [f"<li>{escape(str(path))} — {escape(reason)}</li>" for path, reason in excluded]
             + ["</ul></details>"]
-            if excluded else []
+            if excluded
+            else []
         ),
         '<div class="sg">',
         f'<div class="sc" style="--c:var(--critical)"><div class="sn">{flagged_files}</div><div class="sl">Flagged Files</div><div class="ss">of {total_files} scanned</div></div>',
@@ -2669,15 +2678,17 @@ def _load_pixels_pil(path: Path, limits: ScanLimits | None = None):
                 )
 
             if mode == "P":  # palette-indexed
-                palette = list(img.getpalette())  # flat [R,G,B, ...]
+                palette = img.getpalette()  # flat [R,G,B, ...]
+                if palette is None:
+                    return None
                 indices = bytes(img.getdata())
                 return {"indices": indices}, w, h, "P", palette, fmt
 
             if mode not in ("L", "RGB", "RGBA", "LA"):
-                img = img.convert("RGB")
+                px = img.convert("RGB").tobytes()
                 mode = "RGB"
-
-            px = img.tobytes()
+            else:
+                px = img.tobytes()
             bpp = len(mode)
             channels = {name: bytes(px[i::bpp]) for i, name in enumerate(mode)}
             return channels, w, h, mode, None, fmt
@@ -3875,15 +3886,15 @@ def main(argv: list[str] | None = None) -> int:
             html_path = out_dir / html_name
             txt_path = html_path.with_suffix(".critical.txt")
 
-            excluded = []
+            folder_excluded: list[tuple[Path, str]] = []
             files, skipped = collect_files(
-                folder, extensions, recursive=True, skip_venvs=skip_venvs, excluded=excluded
+                folder, extensions, recursive=True, skip_venvs=skip_venvs, excluded=folder_excluded
             )
 
             print(color(f"\n\U0001f4c1 {folder}  →  {html_name}", BOLD))
 
-            combined_excluded.extend(excluded)
-            if not files and not excluded:
+            combined_excluded.extend(folder_excluded)
+            if not files and not folder_excluded:
                 print(
                     color(
                         f"  (no matching files" + (f", {skipped} skipped" if skipped else "") + ")",
@@ -3895,8 +3906,8 @@ def main(argv: list[str] | None = None) -> int:
             folder_results, folder_flagged = run_scan(files, skipped=skipped, label=str(folder))
             completed_results.extend(folder_results)
 
-            if folder_results or excluded:
-                generate_html_report(folder_results, str(html_path), excluded)
+            if folder_results or folder_excluded:
+                generate_html_report(folder_results, str(html_path), folder_excluded)
                 folder_incomplete = sum(1 for r in folder_results if result_is_incomplete(r))
                 status_parts = []
                 if folder_flagged:

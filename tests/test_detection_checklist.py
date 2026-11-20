@@ -125,8 +125,11 @@ class DetectionChecklistTests(unittest.TestCase):
                     path.write_bytes(struct.pack(">I4s", 8 + len(payload), b"free") + payload)
                     result = analyze_file(path)
                     self.assertEqual(
-                        [f["risk"] for f in result["watermark"]["findings"]
-                         if f["detector"] == "bmff_private_box"],
+                        [
+                            f["risk"]
+                            for f in result["watermark"]["findings"]
+                            if f["detector"] == "bmff_private_box"
+                        ],
                         [risk],
                     )
 
@@ -142,7 +145,9 @@ class DetectionChecklistTests(unittest.TestCase):
             html = report.read_text(encoding="utf-8")
             self.assertIn('class="sn">0</div><div class="sl">Incomplete Files</div>', html)
             self.assertIn("No IMAGE_ROBUST analyzer is configured for .jpg.", html)
-            self.assertIn('class="sn">1</div><div class="sl">Files With Unavailable Checks</div>', html)
+            self.assertIn(
+                'class="sn">1</div><div class="sl">Files With Unavailable Checks</div>', html
+            )
 
     def test_recursive_scan_reports_each_skipped_path_with_a_reason(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -164,7 +169,9 @@ class DetectionChecklistTests(unittest.TestCase):
             root = Path(directory)
             archive = root / "archive.zip"
             with zipfile.ZipFile(archive, "w") as container:
-                container.writestr("note.svg", '<svg><text style="display:none">Hidden</text></svg>')
+                container.writestr(
+                    "note.svg", '<svg><text style="display:none">Hidden</text></svg>'
+                )
             result = analyze_file(archive)
             watermark = result["watermark"]
             nested = watermark["nested_results"][0]["result"]["findings"]
@@ -184,10 +191,11 @@ class DetectionChecklistTests(unittest.TestCase):
             rng = random.Random(1)
             dry = [rng.randint(-5000, 5000) for _ in range(2 * rate)]
             delay = 320
-            echoed = [sample + int(0.7 * dry[i - delay]) if i >= delay else sample
-                      for i, sample in enumerate(dry)]
-            tone = [int(10000 * math.sin(2 * math.pi * 440 * i / rate))
-                    for i in range(2 * rate)]
+            echoed = [
+                sample + int(0.7 * dry[i - delay]) if i >= delay else sample
+                for i, sample in enumerate(dry)
+            ]
+            tone = [int(10000 * math.sin(2 * math.pi * 440 * i / rate)) for i in range(2 * rate)]
             for samples, expected in [(tone, False), (echoed, True)]:
                 with self.subTest(echo=expected):
                     with wave.open(str(path), "wb") as output:
@@ -214,17 +222,23 @@ class DetectionChecklistTests(unittest.TestCase):
                     path.write_text(content, encoding="utf-8")
                     result = analyze_file(path)
                     self.assertEqual([(f.char, f.byte_off) for f in result["zero_width"]], joiners)
-                    self.assertEqual([(f.char, f.byte_off) for f in result["homoglyphs"]], lookalikes)
+                    self.assertEqual(
+                        [(f.char, f.byte_off) for f in result["homoglyphs"]], lookalikes
+                    )
                     self.assertEqual(result_is_flagged(result), bool(joiners or lookalikes))
 
     def test_container_routing_uses_content_with_misleading_extensions(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             for name, members in [
-                ("slides.txt", {"[Content_Types].xml": "<Types/>",
-                                "ppt/presentation.xml": "<presentation/>"}),
-                ("book.txt", {"mimetype": "application/epub+zip",
-                              "META-INF/container.xml": "<container/>"}),
+                (
+                    "slides.txt",
+                    {"[Content_Types].xml": "<Types/>", "ppt/presentation.xml": "<presentation/>"},
+                ),
+                (
+                    "book.txt",
+                    {"mimetype": "application/epub+zip", "META-INF/container.xml": "<container/>"},
+                ),
             ]:
                 path = root / name
                 with zipfile.ZipFile(path, "w") as archive:
@@ -232,15 +246,23 @@ class DetectionChecklistTests(unittest.TestCase):
                         archive.writestr(member, content)
                 result = analyze_file(path)
                 self.assertEqual(result["file_mode"], "binary")
-                self.assertTrue(any(f["detector"] == "archive_embedded_files"
-                                    for f in result["watermark"]["findings"]))
+                self.assertTrue(
+                    any(
+                        f["detector"] == "archive_embedded_files"
+                        for f in result["watermark"]["findings"]
+                    )
+                )
             path = root / "database.txt"
             with contextlib.closing(sqlite3.connect(path)) as database:
                 database.execute("CREATE TABLE sample (content TEXT)")
             result = analyze_file(path)
             self.assertEqual(result["file_mode"], "binary")
-            self.assertTrue(any(f["detector"] == "unsupported_container"
-                                for f in result["watermark"]["findings"]))
+            self.assertTrue(
+                any(
+                    f["detector"] == "unsupported_container"
+                    for f in result["watermark"]["findings"]
+                )
+            )
 
     def test_document_text_findings_identify_members_and_locations(self):
         cases = [
@@ -260,9 +282,12 @@ class DetectionChecklistTests(unittest.TestCase):
                             archive.writestr(member, template.format("test" + marker))
                         result = analyze_file(path)
                         nested = result["watermark"]["nested_results"]
-                        hits = [(n["path"], f["location"]) for n in nested
-                                for f in n["result"]["findings"]
-                                if f["detector"] == "document_text_marker"]
+                        hits = [
+                            (n["path"], f["location"])
+                            for n in nested
+                            for f in n["result"]["findings"]
+                            if f["detector"] == "document_text_marker"
+                        ]
                         self.assertEqual(hits, [(member, "text:1:5")] if marker else [])
 
     def test_incidental_binary_matches_do_not_raise_severity(self):
@@ -271,8 +296,11 @@ class DetectionChecklistTests(unittest.TestCase):
             root = Path(directory)
             files = {
                 "movie.mp4": struct.pack(">I4s", 8 + len(marker), b"mdat") + marker,
-                "font.pdf": (b"%PDF-1.4\n<< /Filter /FlateDecode >>\nstream\n"
-                             + zlib.compress(marker, level=0) + b"\nendstream\n%%EOF"),
+                "font.pdf": (
+                    b"%PDF-1.4\n<< /Filter /FlateDecode >>\nstream\n"
+                    + zlib.compress(marker, level=0)
+                    + b"\nendstream\n%%EOF"
+                ),
             }
             for name, data in files.items():
                 (root / name).write_bytes(data)
@@ -295,8 +323,11 @@ class DetectionChecklistTests(unittest.TestCase):
             self.assertTrue(result_is_flagged(result))
             self.assertIn(
                 "archive_comment",
-                [f["evidence"].get("field") for f in result["watermark"]["findings"]
-                 if f["category"] == "METADATA"],
+                [
+                    f["evidence"].get("field")
+                    for f in result["watermark"]["findings"]
+                    if f["category"] == "METADATA"
+                ],
             )
 
     def test_cli_reports_agree_for_directory_and_explicit_inputs(self):
@@ -321,9 +352,17 @@ class DetectionChecklistTests(unittest.TestCase):
             for inputs in [["-r", str(samples)], [str(document), str(benign)]]:
                 with self.subTest(inputs=inputs):
                     completed = subprocess.run(
-                        [*command, "detect", "--json", str(json_report),
-                         "--html", str(html_report), *inputs],
-                        capture_output=True, text=True,
+                        [
+                            *command,
+                            "detect",
+                            "--json",
+                            str(json_report),
+                            "--html",
+                            str(html_report),
+                            *inputs,
+                        ],
+                        capture_output=True,
+                        text=True,
                     )
                     self.assertEqual(completed.returncode, 1, completed.stderr)
                     payload = json.loads(json_report.read_text(encoding="utf-8"))
@@ -341,9 +380,14 @@ class DetectionChecklistTests(unittest.TestCase):
     def test_baseline_reports_final_verdict_errors_by_format_and_family(self):
         root = Path(__file__).resolve().parents[1]
         completed = subprocess.run(
-            [sys.executable, str(root / "scripts/evaluate_detection.py"),
-             str(root / "tests/corpus/manifest-v2.json")],
-            cwd=root, capture_output=True, text=True,
+            [
+                sys.executable,
+                str(root / "scripts/evaluate_detection.py"),
+                str(root / "tests/corpus/manifest-v2.json"),
+            ],
+            cwd=root,
+            capture_output=True,
+            text=True,
             env={**os.environ, "PYTHONPATH": str(root)},
         )
         self.assertEqual(completed.returncode, 0, completed.stderr)
@@ -360,7 +404,9 @@ class DetectionChecklistTests(unittest.TestCase):
             path = Path(directory) / "sample.docx"
             with zipfile.ZipFile(path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
                 _write_document_headers(archive, "docx")
-                archive.writestr("word/document.xml", "<document><t>" + "\u200b" * 30 + "</t></document>")
+                archive.writestr(
+                    "word/document.xml", "<document><t>" + "\u200b" * 30 + "</t></document>"
+                )
             limited = analyze_file(path, limits={"max_decompressed_bytes": 64})
             self.assertFalse(limited["watermark"]["nested_results"])
             self.assertTrue(limited["watermark"]["nested_scan_errors"])

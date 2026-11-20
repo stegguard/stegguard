@@ -123,18 +123,34 @@ ALL_EXTENSIONS: set[str] = TEXT_EXTENSIONS | BINARY_EXTENSIONS
 # Formats that support pixel-level LSB steganalysis
 LSB_FORMATS: set[str] = {".png", ".bmp", ".gif", ".tif", ".tiff"}
 
-ARCHIVE_DECODE_FORMATS = frozenset({
-    ".zip", ".jar", ".apk", ".docx", ".xlsx", ".odt", ".ods",
-})
-BINARY_DECODE_FORMATS = ARCHIVE_DECODE_FORMATS | LSB_FORMATS | {
-    ".jpg", ".jpeg", ".mp3", ".pdf",
-}
+ARCHIVE_DECODE_FORMATS = frozenset(
+    {
+        ".zip",
+        ".jar",
+        ".apk",
+        ".docx",
+        ".xlsx",
+        ".odt",
+        ".ods",
+    }
+)
+BINARY_DECODE_FORMATS = (
+    ARCHIVE_DECODE_FORMATS
+    | LSB_FORMATS
+    | {
+        ".jpg",
+        ".jpeg",
+        ".mp3",
+        ".pdf",
+    }
+)
 PLAIN_TEXT_REWRITE_FORMATS = frozenset({".txt", ".log"})
 
 
 def format_name(path: Path) -> str:
     name = path.name.lower()
     return name if name in TEXT_EXTENSIONS else path.suffix.lower()
+
 
 # These formats have signatures that can be checked before selecting a handler.
 BINARY_SIGNATURES = {

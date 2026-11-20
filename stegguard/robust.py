@@ -135,9 +135,7 @@ def analyze_wav(source: Path, raw: bytes) -> dict[str, Any]:
         min(echo_rate // 10, len(echo_samples) // 4),
         max(1, echo_rate // 1000),
     )
-    correlations = [
-        (_normalized_autocorrelation(echo_samples, lag), lag) for lag in candidate_lags
-    ]
+    correlations = [(_normalized_autocorrelation(echo_samples, lag), lag) for lag in candidate_lags]
     echo_score, peak_lag = max(correlations, default=(0.0, 0))
     competing_peak = max(
         (score for score, lag in correlations if abs(lag - peak_lag) > echo_rate // 500),

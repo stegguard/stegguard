@@ -130,7 +130,7 @@ def _validated_text(raw: bytes) -> tuple[str, str, bytes]:
         raise ValueError("Structured or binary content cannot be processed as text.")
     bom = raw[:2] if raw.startswith((b"\xff\xfe", b"\xfe\xff")) else b""
     encoding = {b"\xff\xfe": "utf-16-le", b"\xfe\xff": "utf-16-be"}.get(bom, "utf-8")
-    text = raw[len(bom):].decode(encoding)
+    text = raw[len(bom) :].decode(encoding)
     if any(unicodedata.category(char) == "Cc" and char not in "\t\n\r" for char in text):
         raise ValueError("Input contains binary control characters.")
     return text, encoding, bom
@@ -503,7 +503,9 @@ def sanitize_file(
     unsupported_channels = set(selected_channels).difference(TEXT_SANITIZE_CHANNELS)
     if unsupported_channels:
         names = ", ".join(sorted(unsupported_channels))
-        return _unsupported(source, raw_before, f"Unsupported text channels: {names}.", sanitize=True)
+        return _unsupported(
+            source, raw_before, f"Unsupported text channels: {names}.", sanitize=True
+        )
     try:
         text, encoding, bom = _validated_plain_text(raw_before)
     except ValueError as exc:
@@ -545,19 +547,21 @@ def sanitize_file(
                 f"sanitized provenance sidecar already exists: {destination_sidecar}"
             )
 
-    diff = (
-        "".join(
-            difflib.unified_diff(
-                text.splitlines(keepends=True),
-                clean_text.splitlines(keepends=True),
-                fromfile=str(source),
-                tofile=str(destination),
-            )
+    diff = "".join(
+        difflib.unified_diff(
+            text.splitlines(keepends=True),
+            clean_text.splitlines(keepends=True),
+            fromfile=str(source),
+            tofile=str(destination),
         )
     )
     try:
         _write_bytes(
-            destination, raw_after, atomic=in_place, mode=source_mode, validate=_validated_plain_text
+            destination,
+            raw_after,
+            atomic=in_place,
+            mode=source_mode,
+            validate=_validated_plain_text,
         )
     except _OutputValidationError as exc:
         return {
@@ -690,11 +694,17 @@ def process_findings(
     items: list[dict[str, Any]] = []
     seen: set[str] = set()
     findings = _load_findings(Path(findings_path), policy)
-    skipped = [
-        entry for entry in findings.get("skipped", [])
-        if isinstance(entry, dict) and isinstance(entry.get("reason"), str)
-        and isinstance(entry.get("file"), str)
-    ] if isinstance(findings.get("skipped"), list) else []
+    skipped = (
+        [
+            entry
+            for entry in findings.get("skipped", [])
+            if isinstance(entry, dict)
+            and isinstance(entry.get("reason"), str)
+            and isinstance(entry.get("file"), str)
+        ]
+        if isinstance(findings.get("skipped"), list)
+        else []
+    )
     below_threshold = 0
     for entry in findings["results"]:
         name = entry.get("file") if isinstance(entry, dict) else None
@@ -706,19 +716,28 @@ def process_findings(
         seen.add(name)
         severity = entry.get("severity")
         if entry.get("inspection_status") == "NOT_SUPPORTED":
-            items.append({
-                "file": name, "severity": severity, "status": "NOT_SUPPORTED",
-                "error": entry.get("unsupported_reason") or "Input was unsupported by detection.",
-            })
+            items.append(
+                {
+                    "file": name,
+                    "severity": severity,
+                    "status": "NOT_SUPPORTED",
+                    "error": entry.get("unsupported_reason")
+                    or "Input was unsupported by detection.",
+                }
+            )
             continue
         meets_threshold = _meets_severity(severity, min_severity)
         if (operation == "sanitize" or not meets_threshold) and (
             entry.get("incomplete_reasons") or entry.get("error")
         ):
-            items.append({
-                "file": name, "severity": severity, "status": "SCAN_INCOMPLETE",
-                "error": "The detector did not finish scanning this file.",
-            })
+            items.append(
+                {
+                    "file": name,
+                    "severity": severity,
+                    "status": "SCAN_INCOMPLETE",
+                    "error": "The detector did not finish scanning this file.",
+                }
+            )
             continue
         if not meets_threshold:
             below_threshold += 1

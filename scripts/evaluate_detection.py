@@ -41,8 +41,10 @@ def _payload(case: dict[str, Any]) -> bytes:
         else:
             rng = random.Random(1)
             dry = [rng.randint(-5000, 5000) for _ in range(rate * 2)]
-            samples = [sample + int(0.7 * dry[i - 320]) if i >= 320 else sample
-                       for i, sample in enumerate(dry)]
+            samples = [
+                sample + int(0.7 * dry[i - 320]) if i >= 320 else sample
+                for i, sample in enumerate(dry)
+            ]
         with wave.open(result, "wb") as output:
             output.setparams((1, 2, rate, 0, "NONE", "not compressed"))
             output.writeframes(struct.pack(f"<{len(samples)}h", *samples))
@@ -110,12 +112,14 @@ def evaluate(manifest_path: Path) -> dict[str, Any]:
                 }
             )
 
-            verdicts.append({
-                **rows[-1],
-                "expected": case.get("expected_flagged", case["expected_detected"]),
-                "observed": result_is_flagged(detector),
-                "incomplete": result_is_incomplete(detector),
-            })
+            verdicts.append(
+                {
+                    **rows[-1],
+                    "expected": case.get("expected_flagged", case["expected_detected"]),
+                    "observed": result_is_flagged(detector),
+                    "incomplete": result_is_incomplete(detector),
+                }
+            )
 
     by_family: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for row in rows:

@@ -46,9 +46,6 @@ def _output_text(result: dict) -> str:
         ("input.txt", "שלום\u200f!\n"),
         ("input.txt", "\ufeffbyte order mark\n"),
         ("input.txt", "α + β = γ\n"),
-        ("input.md", "first line  \nsecond line\n"),
-        ("input.py", 's = "\\u200b"\nname = "Привет"\n'),
-        ("input.bat", "echo one\r\necho two\r\n"),
     ],
 )
 def test_conservative_default_leaves_legitimate_text_byte_identical(tmp_path, name, content):
@@ -138,40 +135,20 @@ def test_conservative_default_removes_trailing_whitespace_from_plain_text(tmp_pa
     assert result["changes"]["trailing_whitespace_removed"] == 5
 
 
-@pytest.mark.parametrize("suffix", [".md", ".markdown", ".mdown", ".mkd", ".mdx", ".MD"])
-def test_two_trailing_spaces_are_kept_as_a_hard_break_in_markdown_files(tmp_path, suffix):
-    result = _sanitize(tmp_path, "first  \nsecond\n", f"input{suffix}")
-
-    assert _output_text(result) == "first  \nsecond\n"
-    assert result["changes"]["hard_breaks_preserved"] == 1
-    assert result["changes"]["trailing_whitespace_removed"] == 0
-
-
 @pytest.mark.parametrize(
-    ("content", "expected", "removed", "preserved"),
-    [
-        ("first     \nsecond\n", "first  \nsecond\n", 3, 1),
-        ("first \nsecond\n", "first\nsecond\n", 1, 0),
-        ("first\t\t\nsecond\n", "first\nsecond\n", 2, 0),
-        ("first \t \nsecond\n", "first\nsecond\n", 3, 0),
-        ("first  \n\nsecond\n", "first\n\nsecond\n", 2, 0),
-        ("first  \n", "first\n", 2, 0),
-        ("first  ", "first", 2, 0),
-        ("   \nsecond\n", "\nsecond\n", 3, 0),
-    ],
+    "suffix", [".md", ".markdown", ".mdown", ".mkd", ".mdx", ".MD", ".py", ".bat"]
 )
-def test_markdown_whitespace_that_is_not_a_hard_break_is_removed(
-    tmp_path, content, expected, removed, preserved
-):
-    result = _sanitize(tmp_path, content, "input.md")
+def test_public_sanitizer_rejects_structured_text(tmp_path, suffix):
+    source = tmp_path / f"input{suffix}"
+    original = b"first  \nsecond\n"
+    source.write_bytes(original)
 
-    assert _output_text(result) == expected
-    assert result["changes"]["trailing_whitespace_removed"] == removed
-    assert result["changes"]["hard_breaks_preserved"] == preserved
+    result = sanitize_file(source)
 
-
-def test_hard_break_is_not_kept_in_a_file_that_is_not_markdown(tmp_path):
-    assert _output_text(_sanitize(tmp_path, "first  \nsecond\n", "input.py")) == "first\nsecond\n"
+    assert result["sanitization_status"] == "NOT_SUPPORTED"
+    assert result["errors"]
+    assert source.read_bytes() == original
+    assert list(tmp_path.iterdir()) == [source]
 
 
 @pytest.mark.parametrize(
@@ -216,13 +193,6 @@ def test_destructive_profile_removes_emoji_joiners_and_byte_order_marks(tmp_path
     assert _output_text(result) == "\U0001f468\U0001f469\U0001f467\U0001f466\n"
     assert result["changes"]["zero_width_removed"] == 4
     assert result["changes"]["zero_width_preserved"] == 0
-
-
-def test_destructive_profile_removes_markdown_hard_breaks(tmp_path):
-    result = _sanitize(tmp_path, "first  \nsecond\n", "input.md", profile="destructive")
-
-    assert _output_text(result) == "first\nsecond\n"
-    assert result["changes"]["hard_breaks_preserved"] == 0
 
 
 def test_destructive_profile_converts_every_line_ending_to_lf(tmp_path):
@@ -324,15 +294,6 @@ def test_report_warns_when_it_left_characters_that_can_still_carry_data(tmp_path
     ]
 
 
-def test_report_warns_when_a_markdown_hard_break_was_kept(tmp_path):
-    result = _sanitize(tmp_path, "first  \nsecond\n", "input.md")
-
-    assert result["warnings"] == [
-        "Kept 1 Markdown hard break(s); they can still carry data. "
-        "Use --profile destructive to remove them."
-    ]
-
-
 def test_report_has_no_warnings_for_text_with_nothing_left_behind(tmp_path):
     assert _sanitize(tmp_path, "a\u200bb\n")["warnings"] == []
 
@@ -348,18 +309,6 @@ def test_destructive_report_warns_that_legitimate_text_may_have_changed(tmp_path
 
 def test_destructive_report_gives_no_warning_when_nothing_changed(tmp_path):
     assert _sanitize(tmp_path, "plain\n", profile="destructive")["warnings"] == []
-
-
-def test_changed_source_file_warns_that_behavior_is_not_guaranteed(tmp_path):
-    result = _sanitize(tmp_path, 'text = """line  \n"""\n', "input.py")
-
-    assert result["warnings"] == [
-        "Changes to source code can alter its behavior, including string literals. Review the diff."
-    ]
-
-
-def test_unchanged_source_file_gives_no_behavior_warning(tmp_path):
-    assert _sanitize(tmp_path, "value = 1\n", "input.py")["warnings"] == []
 
 
 def test_report_includes_policy_counts_hashes_and_diff(tmp_path):
@@ -381,20 +330,14 @@ def test_report_includes_policy_counts_hashes_and_diff(tmp_path):
     }
 
 
-def test_binary_report_lists_the_policy_with_nothing_applied(tmp_path):
-    result = _sanitize(tmp_path, b"\x89PNG\r\n\x1a\n", "input.png", profile="destructive")
+def test_latin1_file_is_rejected_without_reencoding(tmp_path):
+    original = b"caf\xe9  \n"
+    result = _sanitize(tmp_path, original)
 
-    assert result["sanitization_status"] == "NO_OP_UNSUPPORTED"
-    assert result["policy"]["profile"] == "destructive"
-    assert result["policy"]["applied"] == []
-    assert result["warnings"] == []
-    assert set(result["changes"].values()) == {0}
-
-
-def test_latin1_file_keeps_its_encoding(tmp_path):
-    result = _sanitize(tmp_path, "caf\xe9  \n".encode("latin-1"))
-
-    assert _output(result) == "caf\xe9\n".encode("latin-1")
+    assert result["sanitization_status"] == "NOT_SUPPORTED"
+    assert result["errors"]
+    assert (tmp_path / "input.txt").read_bytes() == original
+    assert not (tmp_path / "output-input.txt").exists()
 
 
 @pytest.mark.parametrize("profile", ["conservative", "destructive"])
@@ -443,40 +386,6 @@ def test_every_profile_preserves_permissions_when_overwriting(tmp_path, profile)
 
     assert stat.S_IMODE(source.stat().st_mode) == 0o640
     assert source.read_text(encoding="utf-8") == "ab\n"
-
-
-def _validator_for(original: bytes):
-    def validator(manifest, content, location):
-        if content == original:
-            return {"status": "VALID", "provider": "Example"}
-        return {"status": "TAMPERED", "validation_errors": ["content hash mismatch"]}
-
-    return validator
-
-
-def test_conservative_profile_preserves_provenance_when_legitimate_text_is_unchanged(tmp_path):
-    original = f"<svg><!-- c2pa manifest --><text>{FAMILY}</text></svg>".encode()
-    source = tmp_path / "marked.svg"
-    source.write_bytes(original)
-
-    result = sanitize_file(source, provenance_validator=_validator_for(original))
-
-    assert result["changed"] is False
-    assert result["provenance_impact"] == "preserved"
-
-
-def test_destructive_profile_reports_provenance_invalidation(tmp_path):
-    original = f"<svg><!-- c2pa manifest --><text>{FAMILY}</text></svg>".encode()
-    source = tmp_path / "marked.svg"
-    source.write_bytes(original)
-
-    result = sanitize_file(
-        source, provenance_validator=_validator_for(original), profile="destructive"
-    )
-
-    assert result["changed"] is True
-    assert result["provenance_after"]["status"] == "TAMPERED"
-    assert result["provenance_impact"] == "invalidated"
 
 
 def test_cli_uses_the_conservative_profile_by_default(tmp_path, capsys):

@@ -26,11 +26,14 @@ def test_archive_cannot_be_rewritten(tmp_path, name):
     assert list(tmp_path.iterdir()) == [source]
 
 
-@pytest.mark.parametrize(("name", "data"), [
-    ("notes.txt", b"\x00\xff"),
-    ("notes.txt", b"SQLite format 3\0"),
-    ("script.py", b"print('hello')\n"),
-])
+@pytest.mark.parametrize(
+    ("name", "data"),
+    [
+        ("notes.txt", b"\x00\xff"),
+        ("notes.txt", b"SQLite format 3\0"),
+        ("script.py", b"print('hello')\n"),
+    ],
+)
 def test_only_validated_plain_text_can_be_rewritten(tmp_path, name, data):
     source = tmp_path / name
     source.write_bytes(data)
@@ -103,11 +106,17 @@ def test_batch_reports_skips_and_unsupported_inputs(tmp_path):
     marked.write_text("hello\u200b\n")
     code.write_text("print('hello')\n")
     findings = tmp_path / "findings.json"
-    findings.write_text(json.dumps({"results": [
-        {"file": str(clean), "severity": "clean"},
-        {"file": str(marked), "severity": "low"},
-        {"file": str(code), "severity": "low"},
-    ]}))
+    findings.write_text(
+        json.dumps(
+            {
+                "results": [
+                    {"file": str(clean), "severity": "clean"},
+                    {"file": str(marked), "severity": "low"},
+                    {"file": str(code), "severity": "low"},
+                ]
+            }
+        )
+    )
     report = process_findings(findings, "sanitize")
     assert report["outcome_counts"] == {"SKIPPED": 1, "SANITIZED": 1, "NOT_SUPPORTED": 1}
     assert report["selected"] == 2
@@ -116,11 +125,14 @@ def test_batch_reports_skips_and_unsupported_inputs(tmp_path):
     assert report["skipped"][0]["reason"]
 
 
-@pytest.mark.parametrize("content", [
-    "<svg><text>hello\u200b</text></svg>",
-    "#!/usr/bin/env python3\nprint('hello\u200b')\n",
-    '{"greeting": "hello\u200b"}',
-])
+@pytest.mark.parametrize(
+    "content",
+    [
+        "<svg><text>hello\u200b</text></svg>",
+        "#!/usr/bin/env python3\nprint('hello\u200b')\n",
+        '{"greeting": "hello\u200b"}',
+    ],
+)
 def test_identifiable_structured_text_cannot_be_rewritten_under_txt(tmp_path, content):
     source = tmp_path / "notes.txt"
     source.write_text(content, encoding="utf-8")
@@ -177,31 +189,51 @@ def test_mixed_inspection_and_rewrite_outcomes(tmp_path, monkeypatch):
     for paths in ([str(inputs), "-r"], [str(inputs / name) for name in fixtures]):
         assert main([*paths, *args]) == 2
         report = json.loads(findings.read_text())
-        assert [report[key] for key in (
-            "completed_files", "skipped_files", "unsupported_files", "incomplete_files",
-        )] == [3, 1, 1, 1]
+        assert [
+            report[key]
+            for key in (
+                "completed_files",
+                "skipped_files",
+                "unsupported_files",
+                "incomplete_files",
+            )
+        ] == [3, 1, 1, 1]
         assert report["skipped"][0]["reason"]
         items = {Path(item["file"]).name: item for item in report["results"]}
         assert "Unicode text" in items["full.txt"]["checks_run"]
         assert not items["bad.txt"]["checks_run"]
         rendered = html.read_text()
-        for label, count in (("Unsupported Files", 1), ("Incomplete Files", 1), ("Skipped Files", 1)):
+        for label, count in (
+            ("Unsupported Files", 1),
+            ("Incomplete Files", 1),
+            ("Skipped Files", 1),
+        ):
             assert f'class="sn">{count}</div><div class="sl">{label}</div>' in rendered
 
     sync = os.fsync
 
     def damage_world(descriptor):
-        if os.pread(descriptor, 5, 0) == b"world":
-            os.pwrite(descriptor, b"\x00", 0)
+        os.lseek(descriptor, 0, os.SEEK_SET)
+        if os.read(descriptor, 5) == b"world":
+            os.lseek(descriptor, 0, os.SEEK_SET)
+            os.write(descriptor, b"\x00")
         sync(descriptor)
 
     monkeypatch.setattr(os, "fsync", damage_world)
     result = process_findings(
-        findings, "sanitize", in_place=True, confirm=True, channels=["zero_width"],
+        findings,
+        "sanitize",
+        in_place=True,
+        confirm=True,
+        channels=["zero_width"],
     )
     assert result["outcome_counts"] == {
-        "SKIPPED": 1, "SANITIZED": 1, "PARTIAL": 1, "VALIDATION_FAILED": 1,
-        "NOT_SUPPORTED": 1, "SCAN_INCOMPLETE": 1,
+        "SKIPPED": 1,
+        "SANITIZED": 1,
+        "PARTIAL": 1,
+        "VALIDATION_FAILED": 1,
+        "NOT_SUPPORTED": 1,
+        "SCAN_INCOMPLETE": 1,
     }
     outcomes = {Path(item["file"]).name: item for item in result["results"]}
     assert outcomes["partial.txt"]["result"]["warnings"]

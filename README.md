@@ -150,7 +150,7 @@ completed scan with findings, and `2` means invalid input or an incomplete
 scan. The complete compatibility contract is in
 [docs/compatibility.md](https://github.com/stegguard/stegguard/blob/main/docs/compatibility.md).
 
-See [supported file types](docs/compatibility.md#supported-file-types) for the
+See [supported file types](https://github.com/stegguard/stegguard/blob/main/docs/compatibility.md#supported-file-types) for the
 extension list and the capabilities of each operation.
 
 ## What it detects
@@ -200,7 +200,7 @@ reported as cryptographic validation.
 
 Sanitization rewrites validated plain-text `.txt` and `.log` files in UTF-8 or
 BOM-marked UTF-16. Documents, source files, archives, and media can be inspected
-with the operations listed in [supported file types](docs/compatibility.md#supported-file-types).
+with the operations listed in [supported file types](https://github.com/stegguard/stegguard/blob/main/docs/compatibility.md#supported-file-types).
 
 By default, this command:
 

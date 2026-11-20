@@ -5,6 +5,22 @@ the Python API, CLI contract, and versioned report schema.
 
 ## Unreleased
 
+## 0.6.0
+
+- Detect text markers inside DOCX, PPTX, XLSX, EPUB, and ODT, and retain
+  original byte offsets for BOM-marked UTF-16 text.
+- Improve file routing, stylesheet inspection, and detection of ordinary
+  Unicode, compressed data, MP4 padding, and periodic audio. Malformed
+  supported inputs produce an incomplete scan and CLI exit code 2.
+- Report unsupported and skipped inputs and show which checks ran.
+  JSON `completed_files` excludes unsupported inspections.
+- **Breaking change:** sanitization now rewrites only validated UTF-8 or
+  BOM-marked UTF-16 `.txt` and `.log` files. Binary rewriting and its
+  `metadata` and `lsb` channels are unsupported. The sanitizer validates
+  staged output before publishing it.
+- Add a 38-file synthetic corpus with expected file verdicts and metrics
+  grouped by format and detector family.
+
 ## 0.5.0
 
 ### Added

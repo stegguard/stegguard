@@ -103,6 +103,11 @@ that behavior, pass `--profile destructive` or `profile="destructive"`. Reports 
 `policy`, `warnings`, and the `changes` keys `zero_width_preserved`,
 `homoglyphs_preserved`, and `hard_breaks_preserved`.
 
+#### Migrating from 0.5.0 to 0.6.0
+
+JSON report consumers should use `unsupported_files` for unsupported inspections.
+The `completed_files` count excludes those inputs.
+
 Earlier versions offered binary sanitization. The current rewrite policy allows
 validated plain text only. A file or channel outside that policy returns
 `NOT_SUPPORTED`, and staged output that fails validation returns

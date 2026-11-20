@@ -31,6 +31,7 @@ from stegguard.formats import (
     TEXT_EXTENSIONS,
     format_name,
     signature_format,
+    text_encoding,
 )
 from stegguard.limits import (
     ResourceLimitError,
@@ -420,7 +421,8 @@ def analyze_file(
     if (declared in BINARY_SIGNATURES and not signature and not kind) or (
         suffix in STRUCTURED_ARCHIVES and kind != suffix
     ):
-        results["unsupported_reason"] = "Content does not match the declared file format."
+        field = "unsupported_reason" if declared == ".sqlite" else "error"
+        results[field] = "Content does not match the declared file format."
         return results
     if kind or signature or suffix in BINARY_EXTENSIONS:
         results = analyze_binary_file(filepath, policy, raw=raw)
@@ -440,22 +442,16 @@ def analyze_file(
         results["unsupported_reason"] = "File extension has no inspection handler."
         return results
 
-    bom_size = 0
+    byte_encoding, bom = text_encoding(raw)
+    bom_size = len(bom)
     try:
-        if raw.startswith((b"\xff\xfe", b"\xfe\xff")):
-            byte_encoding = "utf-16-le" if raw.startswith(b"\xff\xfe") else "utf-16-be"
-            bom_size = 2
-            text = raw[bom_size:].decode(byte_encoding)
-        else:
-            try:
-                text = raw.decode("utf-8")
-                byte_encoding = "utf-8"
-            except UnicodeDecodeError:
-                text = raw.decode("latin-1")
-                byte_encoding = "latin-1"
+        text = raw[bom_size:].decode(byte_encoding)
     except UnicodeDecodeError as exc:
-        results["error"] = f"Decode error: {exc}"
-        return results
+        if bom:
+            results["error"] = f"Decode error: {exc}"
+            return results
+        text = raw.decode("latin-1")
+        byte_encoding = "latin-1"
 
     if "\0" in text:
         results["unsupported_reason"] = "Unrecognized binary content in text input."

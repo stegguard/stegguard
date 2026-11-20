@@ -30,6 +30,7 @@ from stegguard.formats import (
     TEXT_EXTENSIONS,
     format_name,
     signature_format,
+    text_encoding,
 )
 from stegguard.limits import ScanLimits, read_limited, resolve_limits
 from stegguard.schema import SCHEMA_VERSION
@@ -128,8 +129,7 @@ def _validated_text(raw: bytes) -> tuple[str, str, bytes]:
 
     if container_format(raw, "") or signature_format(raw) or raw.startswith(b"{\\rtf"):
         raise ValueError("Structured or binary content cannot be processed as text.")
-    bom = raw[:2] if raw.startswith((b"\xff\xfe", b"\xfe\xff")) else b""
-    encoding = {b"\xff\xfe": "utf-16-le", b"\xfe\xff": "utf-16-be"}.get(bom, "utf-8")
+    encoding, bom = text_encoding(raw)
     text = raw[len(bom) :].decode(encoding)
     if any(unicodedata.category(char) == "Cc" and char not in "\t\n\r" for char in text):
         raise ValueError("Input contains binary control characters.")

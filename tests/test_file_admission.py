@@ -244,12 +244,36 @@ def test_mixed_inspection_and_rewrite_outcomes(tmp_path, monkeypatch):
     assert (inputs / "corrupt.txt").read_bytes() == fixtures["corrupt.txt"]
 
 
-@pytest.mark.parametrize("name", ["photo.gif", "slides.pptx", "book.epub", "data.sqlite"])
-def test_declared_binary_format_requires_matching_content(tmp_path, name):
-    from stegguard.detector import analyze_file, result_to_json_dict
+@pytest.mark.parametrize("name", ["photo.gif", "slides.pptx", "book.epub", "image.bmp"])
+def test_malformed_declared_format_fails_mixed_detection_batch(tmp_path, name):
+    import json
+
+    from stegguard.detector import main
 
     source = tmp_path / name
     source.write_bytes(b"ordinary text\n")
+    clean = tmp_path / "clean.txt"
+    clean.write_text("clean\n", encoding="utf-8")
+    flagged = tmp_path / "flagged.txt"
+    flagged.write_text("hidden\u200b\n", encoding="utf-8")
+    output = tmp_path / "report.json"
+
+    assert main([str(source), str(clean), str(flagged), "--json", str(output)]) == 2
+    report = json.loads(output.read_text(encoding="utf-8"))
+    entries = {Path(item["file"]).name: item for item in report["results"]}
+    assert entries[name]["inspection_status"] == "INCOMPLETE"
+    assert entries[name]["incomplete_reasons"] == [
+        "Content does not match the declared file format."
+    ]
+    assert report["clean_files"] == report["flagged_files"] == report["incomplete_files"] == 1
+
+
+@pytest.mark.parametrize("data", [b"ordinary text\n", b"SQLite format 3\0"])
+def test_sqlite_content_inspection_is_unsupported(tmp_path, data):
+    from stegguard.detector import analyze_file, result_to_json_dict
+
+    source = tmp_path / "data.sqlite"
+    source.write_bytes(data)
     result = result_to_json_dict(analyze_file(source))
     assert result["inspection_status"] == "NOT_SUPPORTED"
     assert result["unsupported_reason"]
@@ -262,3 +286,29 @@ def test_renamed_gif_cannot_reach_text_inspection(tmp_path):
     source.write_bytes(b"GIF89a" + b"printable bytes")
     result = analyze_file(source)
     assert result["file_mode"] == "binary"
+
+
+def test_bm_prefix_in_text_does_not_trigger_binary_routing(tmp_path):
+    from stegguard.detector import analyze_file
+
+    source = tmp_path / "notes.txt"
+    source.write_text("BMW service record\u200b\nInvoice totals follow.\n", encoding="utf-8")
+
+    result = analyze_file(source)
+    assert result["file_mode"] == "text"
+    assert result["total_hidden"] == 1
+    assert sanitize_file(source, channels=["zero_width"])["sanitization_status"] == "SANITIZED"
+
+
+def test_renamed_bmp_with_plausible_header_is_routed_as_binary(tmp_path):
+    from struct import pack
+
+    from stegguard.detector import analyze_file
+
+    source = tmp_path / "image.txt"
+    file_header = pack("<2sIHHI", b"BM", 58, 0, 0, 54)
+    dib_header = pack("<IiiHHIIiiII", 40, 1, 1, 1, 24, 0, 4, 0, 0, 0, 0)
+    source.write_bytes(file_header + dib_header + b"\0" * 4)
+
+    assert analyze_file(source)["file_mode"] == "binary"
+    assert sanitize_file(source)["sanitization_status"] == "NOT_SUPPORTED"

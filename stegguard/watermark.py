@@ -13,10 +13,11 @@ import zipfile
 from dataclasses import asdict, dataclass, field
 from html.parser import HTMLParser
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any, Iterator, Mapping
 from xml.etree import ElementTree
 from xml.parsers import expat
 
+from stegguard.formats import text_encoding
 from stegguard.limits import (
     ResourceLimitError,
     ScanLimits,
@@ -453,13 +454,114 @@ def _scan_format_metadata(source: Path, raw: bytes) -> list[DetectionFinding]:
     ]
 
 
-class _InlineStyles(HTMLParser):
+_CSS_TOKENS = re.compile(r"""/\*.*?\*/|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|[{}();]""", re.S)
+_SIMPLE_SELECTOR = r"(?:[.#][\w-]+|[a-zA-Z][\w-]*)"
+_SIMPLE_SELECTOR_LIST = re.compile(rf"{_SIMPLE_SELECTOR}(?:\s*,\s*{_SIMPLE_SELECTOR})*")
+
+
+def _css_declarations(style: str) -> Iterator[str]:
+    parts: list[str] = []
+    start = 0
+    paren_depth = 0
+    for match in _CSS_TOKENS.finditer(style):
+        parts.append(style[start : match.start()])
+        token = match.group()
+        if token == "(":
+            paren_depth += 1
+        elif token == ")" and paren_depth:
+            paren_depth -= 1
+        if token == ";" and not paren_depth:
+            yield "".join(parts).strip()
+            parts.clear()
+        elif token.startswith("/*"):
+            parts.append(" ")
+        else:
+            parts.append(token)
+        start = match.end()
+    parts.append(style[start:])
+    yield "".join(parts).strip()
+
+
+def _stylesheet_declarations(
+    stylesheet: str, tags: set[str], classes_and_ids: set[str]
+) -> Iterator[str]:
+    """Yield declarations from unconditional rules with matching simple selectors."""
+    stylesheet = _CSS_TOKENS.sub(
+        lambda match: " " if match.group().startswith("/*") else match.group(),
+        stylesheet,
+    )
+    depth = paren_depth = 0
+    start = declaration_start = 0
+    matches_document = False
+    for match in _CSS_TOKENS.finditer(stylesheet):
+        token = match.group()
+        if token == "(":
+            paren_depth += 1
+        elif token == ")" and paren_depth:
+            paren_depth -= 1
+        elif paren_depth:
+            continue
+        elif token == "{":
+            if depth == 0:
+                selectors = stylesheet[start : match.start()].strip()
+                matches_document = bool(
+                    _SIMPLE_SELECTOR_LIST.fullmatch(selectors)
+                    and any(
+                        selector in classes_and_ids or selector.lower() in tags
+                        for selector in map(str.strip, selectors.split(","))
+                    )
+                )
+                declaration_start = match.end()
+            else:
+                matches_document = False
+            depth += 1
+        elif token == "}" and depth:
+            depth -= 1
+            if depth == 0:
+                start = match.end()
+                if matches_document:
+                    yield from _css_declarations(stylesheet[declaration_start : match.start()])
+        elif token == ";" and depth == 0:
+            start = match.end()
+
+
+class _MarkupStyles(HTMLParser):
     def __init__(self) -> None:
         super().__init__()
         self.styles: list[str] = []
+        self.tags: set[str] = set()
+        self.classes_and_ids: set[str] = set()
+        self.stylesheets: list[str] = []
+        self.in_stylesheet = False
 
     def handle_starttag(self, tag, attrs):
-        self.styles.extend(value for name, value in attrs if name == "style" and value)
+        attributes = dict(reversed(attrs))
+        if tag in {"textarea", "title"}:
+            self.set_cdata_mode(tag)
+        if tag == "style":
+            css_type = (attributes.get("type", "text/css") or "").strip().lower()
+            media = (attributes.get("media") or "").strip().lower()
+            self.in_stylesheet = css_type in {"", "text/css"} and media in {"", "all"}
+            return
+        if tag in {"head", "title", "script", "meta", "link", "base", "template"}:
+            return
+        self.tags.add(tag)
+        if style := attributes.get("style"):
+            self.styles.append(style)
+        if classes := attributes.get("class"):
+            self.classes_and_ids.update(
+                f".{name}" for name in re.findall(r"[^ \t\n\f\r]+", classes)
+            )
+        if element_id := attributes.get("id"):
+            self.classes_and_ids.add(f"#{element_id}")
+
+    def handle_endtag(self, tag):
+        if tag == "style":
+            self.in_stylesheet = False
+
+    def handle_data(self, data):
+        if self.in_stylesheet:
+            self.stylesheets.append(data)
 
 
 def _scan_text(text: str, source: Path) -> list[DetectionFinding]:
@@ -480,7 +582,7 @@ def _scan_text(text: str, source: Path) -> list[DetectionFinding]:
             )
         )
 
-    parser = _InlineStyles()
+    parser = _MarkupStyles()
     if source.suffix.lower() in {".html", ".htm", ".svg", ".xhtml"}:
         parser.feed(text)
         parser.close()
@@ -492,8 +594,12 @@ def _scan_text(text: str, source: Path) -> list[DetectionFinding]:
         "off_canvas": r"(?:left|top)\s*:\s*-\d{3,}(?:px|pt)",
     }
     declarations = {
-        declaration.strip() for style in parser.styles for declaration in style.split(";")
+        declaration for style in parser.styles for declaration in _css_declarations(style)
     }
+    for stylesheet in parser.stylesheets:
+        declarations.update(
+            _stylesheet_declarations(stylesheet, parser.tags, parser.classes_and_ids)
+        )
     matched_layout = [
         name
         for name, pattern in layout_patterns.items()
@@ -897,8 +1003,9 @@ def _scan_content(
                 risk="medium",
             )
         )
+    encoding, bom = text_encoding(raw)
     try:
-        text = raw.decode("utf-8")
+        text = raw[len(bom) :].decode(encoding)
     except UnicodeDecodeError:
         text = ""
     if text:

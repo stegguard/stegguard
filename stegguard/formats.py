@@ -152,6 +152,16 @@ def format_name(path: Path) -> str:
     return name if name in TEXT_EXTENSIONS else path.suffix.lower()
 
 
+def text_encoding(raw: bytes) -> tuple[str, bytes]:
+    """Return the encoding and byte-order mark for UTF text."""
+    bom = raw[:2]
+    if bom == b"\xff\xfe":
+        return "utf-16-le", bom
+    if bom == b"\xfe\xff":
+        return "utf-16-be", bom
+    return "utf-8", b""
+
+
 # These formats have signatures that can be checked before selecting a handler.
 BINARY_SIGNATURES = {
     ".png": (b"\x89PNG",),
@@ -171,6 +181,15 @@ STRUCTURED_ARCHIVES = {".docx", ".pptx", ".xlsx", ".epub", ".odt"}
 def signature_format(raw: bytes) -> str | None:
     for kind, prefixes in BINARY_SIGNATURES.items():
         if raw.startswith(prefixes):
+            if kind == ".bmp":
+                if len(raw) < 26 or raw[6:10] != b"\0" * 4:
+                    continue
+                pixel_offset = int.from_bytes(raw[10:14], "little")
+                dib_size = int.from_bytes(raw[14:18], "little")
+                if dib_size not in {12, 16, 40, 52, 56, 64, 108, 124}:
+                    continue
+                if not 14 + dib_size <= pixel_offset <= len(raw):
+                    continue
             return kind
     if raw.startswith(b"RIFF") and raw[8:12] == b"WAVE":
         return ".wav"

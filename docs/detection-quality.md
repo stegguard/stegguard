@@ -32,6 +32,24 @@ study. Production claims require independently sourced, legally distributable
 benign and adversarial samples for every claimed family, reviewed labels,
 confidence intervals, and documented sampling bias.
 
+## Final-verdict corpus
+
+Run the expanded baseline with:
+
+```bash
+python scripts/evaluate_detection.py tests/corpus/manifest-v2.json
+```
+
+The [v2 results](detection-baseline-v2.json) record 38 synthetic files, with
+16 flagged, 22 clean, and zero incomplete scans. Detector-family results and
+final file verdicts each had zero false positives and zero misses. The
+final-verdict tables group errors by file format and detector family.
+
+The installed CLI returned exit code 1 for both recursive and explicit scans
+of the full corpus. It returned exit code 0 for the 22 benign files. HTML and
+JSON agreed on the totals by severity. The corpus measures behavior on the
+listed fixtures.
+
 ## Adding a detector
 
 1. Add at least one realistic benign negative and one harmless generated

@@ -15,15 +15,22 @@ from collections import Counter
 from pathlib import Path
 from typing import Any, Iterable, Mapping
 
-from stegguard.binary_ops import decode_lsb, extract_metadata, sanitize_binary
+from stegguard.binary_ops import decode_lsb, extract_metadata
 from stegguard.detector import (
-    BINARY_EXTENSIONS,
     HOMOGLYPH_CHARS,
     ZERO_WIDTH_CHARS,
     analyze_file,
     attempt_decode_zero_width,
     result_is_flagged,
     result_is_incomplete,
+)
+from stegguard.formats import (
+    BINARY_DECODE_FORMATS,
+    PLAIN_TEXT_REWRITE_FORMATS,
+    TEXT_EXTENSIONS,
+    format_name,
+    signature_format,
+    text_encoding,
 )
 from stegguard.limits import ScanLimits, read_limited, resolve_limits
 from stegguard.schema import SCHEMA_VERSION
@@ -117,12 +124,41 @@ def _sha256(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
-def _read_text(path: Path, limits: ScanLimits) -> tuple[bytes, str, str]:
-    raw = read_limited(path, limits)
-    try:
-        return raw, raw.decode("utf-8"), "utf-8"
-    except UnicodeDecodeError:
-        return raw, raw.decode("latin-1"), "latin-1"
+def _validated_text(raw: bytes) -> tuple[str, str, bytes]:
+    from stegguard.watermark import container_format
+
+    if container_format(raw, "") or signature_format(raw) or raw.startswith(b"{\\rtf"):
+        raise ValueError("Structured or binary content cannot be processed as text.")
+    encoding, bom = text_encoding(raw)
+    text = raw[len(bom) :].decode(encoding)
+    if any(unicodedata.category(char) == "Cc" and char not in "\t\n\r" for char in text):
+        raise ValueError("Input contains binary control characters.")
+    return text, encoding, bom
+
+
+def _validated_plain_text(raw: bytes) -> tuple[str, str, bytes]:
+    text, encoding, bom = _validated_text(raw)
+    start = text.lstrip("\ufeff \t\r\n")
+    if start.startswith("#!") or re.match(r"<[A-Za-z_!?]", start):
+        raise ValueError("Input has a script or markup signature.")
+    if start.startswith(("{", "[")):
+        try:
+            json.loads(start)
+        except (ValueError, RecursionError):
+            pass
+        else:
+            raise ValueError("Structured JSON requires a format-specific rewriter.")
+    return text, encoding, bom
+
+
+def _unsupported(source: Path, raw: bytes, reason: str, *, sanitize: bool = False) -> dict:
+    return {
+        "schema_version": SCHEMA_VERSION,
+        "file": str(source),
+        "sha256": _sha256(raw),
+        "sanitization_status" if sanitize else "status": "NOT_SUPPORTED",
+        "errors": [reason],
+    }
 
 
 def _decode_bits(bits: str) -> tuple[str, float]:
@@ -146,9 +182,10 @@ def decode_file(
     """Decode recognized hidden signals without modifying the source."""
     policy = resolve_limits(limits)
     source = Path(path)
-    if source.suffix.lower() in BINARY_EXTENSIONS:
-        raw = read_limited(source, policy)
-        metadata = extract_metadata(raw, source.suffix.lower(), policy)
+    raw = read_limited(source, policy)
+    suffix = format_name(source)
+    if suffix in BINARY_DECODE_FORMATS:
+        metadata = extract_metadata(raw, suffix, policy)
         lsb = decode_lsb(source, policy)
         if metadata is None and lsb is None:
             return {
@@ -166,7 +203,12 @@ def decode_file(
             "metadata": metadata,
             "lsb": lsb,
         }
-    raw, text, encoding = _read_text(source, policy)
+    if suffix not in TEXT_EXTENSIONS | {""}:
+        return _unsupported(source, raw, "Format has no decoder.")
+    try:
+        text, encoding, _ = _validated_text(raw)
+    except ValueError as exc:
+        return _unsupported(source, raw, str(exc))
     findings = analyze_file(source, limits=policy)
     decoded = attempt_decode_zero_width(findings.get("zero_width", []))
     printable = sum(char.isprintable() for char in decoded)
@@ -179,10 +221,10 @@ def decode_file(
     trailing_decoded, trailing_confidence = _decode_bits(trailing_bits)
 
     ending_bits = ""
-    for byte_line in raw.splitlines(keepends=True):
-        if byte_line.endswith(b"\r\n"):
+    for byte_line in text.splitlines(keepends=True):
+        if byte_line.endswith("\r\n"):
             ending_bits += "1"
-        elif byte_line.endswith((b"\n", b"\r")):
+        elif byte_line.endswith(("\n", "\r")):
             ending_bits += "0"
     ending_decoded, ending_confidence = _decode_bits(ending_bits)
 
@@ -393,16 +435,14 @@ def _sanitize_warnings(
     return warnings
 
 
-def _write_bytes(path: Path, data: bytes, *, atomic: bool, mode: int | None = None) -> None:
+class _OutputValidationError(ValueError):
+    pass
+
+
+def _write_bytes(
+    path: Path, data: bytes, *, atomic: bool, mode: int | None = None, validate=None
+) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    if not atomic:
-        with path.open("xb") as stream:
-            stream.write(data)
-            stream.flush()
-            os.fsync(stream.fileno())
-        if mode is not None:
-            path.chmod(mode)
-        return
     descriptor, temporary_name = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
     temporary = Path(temporary_name)
     try:
@@ -412,7 +452,18 @@ def _write_bytes(path: Path, data: bytes, *, atomic: bool, mode: int | None = No
             os.fsync(stream.fileno())
         if mode is not None:
             temporary.chmod(mode)
-        os.replace(temporary, path)
+        if validate is not None:
+            try:
+                staged = temporary.read_bytes()
+                validate(staged)
+                if staged != data:
+                    raise ValueError("Staged output differs from the intended output.")
+            except (OSError, ValueError) as exc:
+                raise _OutputValidationError(str(exc)) from exc
+        if atomic:
+            os.replace(temporary, path)
+        else:
+            os.link(temporary, path)
     finally:
         if temporary.exists():
             temporary.unlink()
@@ -435,9 +486,7 @@ def sanitize_file(
     use. The destructive profile removes all of them and can change legitimate text.
     channels limits which transformations run; by default all of them do.
 
-    Binary files use the metadata and lsb channels. Conservative removes text metadata
-    but keeps color and provenance data, and clears pixel LSBs only when there is
-    evidence of a payload. Destructive also removes those and always clears pixel LSBs.
+    Rewriting is limited to validated plain-text files.
     """
     if in_place != confirm:
         raise ValueError("overwriting requires both --in-place and --confirm")
@@ -447,14 +496,20 @@ def sanitize_file(
     source = Path(path)
     suffix = source.suffix.lower()
     source_mode = stat.S_IMODE(source.stat().st_mode)
-    is_binary = suffix in BINARY_EXTENSIONS
-    selected_channels = _resolve_policy(profile, channels, is_binary)
-    if is_binary:
-        raw_before = read_limited(source, policy)
-        text = ""
-        encoding = ""
-    else:
-        raw_before, text, encoding = _read_text(source, policy)
+    selected_channels = _resolve_policy(profile, channels)
+    raw_before = read_limited(source, policy)
+    if suffix not in PLAIN_TEXT_REWRITE_FORMATS:
+        return _unsupported(source, raw_before, "Format has no approved rewriter.", sanitize=True)
+    unsupported_channels = set(selected_channels).difference(TEXT_SANITIZE_CHANNELS)
+    if unsupported_channels:
+        names = ", ".join(sorted(unsupported_channels))
+        return _unsupported(
+            source, raw_before, f"Unsupported text channels: {names}.", sanitize=True
+        )
+    try:
+        text, encoding, bom = _validated_plain_text(raw_before)
+    except ValueError as exc:
+        return _unsupported(source, raw_before, str(exc), sanitize=True)
     from stegguard.watermark import scan_file
 
     provenance_before = scan_file(
@@ -462,20 +517,8 @@ def sanitize_file(
         provenance_validator=provenance_validator,
         limits=policy,
     )["provenance"]
-    binary_result = None
-    if is_binary:
-        clean_text = ""
-        binary_result = sanitize_binary(source, raw_before, selected_channels, profile, policy)
-        raw_after = binary_result.data
-        changes = {
-            **dict.fromkeys(_sanitize_text("")[1], 0),
-            "metadata_removed": len(binary_result.metadata_removed),
-            "trailing_bytes_removed": binary_result.trailing_bytes_removed,
-            "lsb_samples_cleared": binary_result.lsb_samples_cleared,
-        }
-    else:
-        clean_text, changes = _sanitize_text(text, selected_channels, profile, suffix)
-        raw_after = clean_text.encode(encoding)
+    clean_text, changes = _sanitize_text(text, selected_channels, profile, suffix)
+    raw_after = bom + clean_text.encode(encoding)
 
     if in_place:
         destination = source
@@ -504,19 +547,30 @@ def sanitize_file(
                 f"sanitized provenance sidecar already exists: {destination_sidecar}"
             )
 
-    diff = (
-        ""
-        if is_binary
-        else "".join(
-            difflib.unified_diff(
-                text.splitlines(keepends=True),
-                clean_text.splitlines(keepends=True),
-                fromfile=str(source),
-                tofile=str(destination),
-            )
+    diff = "".join(
+        difflib.unified_diff(
+            text.splitlines(keepends=True),
+            clean_text.splitlines(keepends=True),
+            fromfile=str(source),
+            tofile=str(destination),
         )
     )
-    _write_bytes(destination, raw_after, atomic=in_place, mode=source_mode)
+    try:
+        _write_bytes(
+            destination,
+            raw_after,
+            atomic=in_place,
+            mode=source_mode,
+            validate=_validated_plain_text,
+        )
+    except _OutputValidationError as exc:
+        return {
+            "schema_version": SCHEMA_VERSION,
+            "file": str(source),
+            "sanitization_status": "VALIDATION_FAILED",
+            "original_preserved": True,
+            "errors": [str(exc)],
+        }
     if source_sidecar is not None and destination_sidecar is not None:
         _write_bytes(
             destination_sidecar,
@@ -539,10 +593,10 @@ def sanitize_file(
         provenance_impact = "unchanged" if raw_before == raw_after else "not_applicable"
 
     warnings = _sanitize_warnings(changes, profile, suffix, raw_before != raw_after)
-    if binary_result is not None:
-        # The text warnings about reviewing a diff do not apply to binary output.
-        warnings = binary_result.warnings
-
+    remaining, _ = _sanitize_text(clean_text, TEXT_SANITIZE_CHANNELS, profile, suffix)
+    partial = remaining != clean_text
+    if partial:
+        warnings.append("Additional text changes are available with the full channel selection.")
     report = {
         "schema_version": SCHEMA_VERSION,
         "file": str(source),
@@ -559,20 +613,15 @@ def sanitize_file(
         "warnings": warnings,
         "diff": diff,
         "original_preserved": not in_place,
-        "sanitization_status": binary_result.status if binary_result else "SANITIZED",
+        "sanitization_status": "PARTIAL" if partial else "SANITIZED",
         "provenance_before": provenance_before,
         "provenance_after": provenance_after,
         "provenance_impact": provenance_impact,
     }
-    if binary_result is not None:
-        report["binary"] = {
-            "metadata_removed": binary_result.metadata_removed,
-            "lsb_method": binary_result.lsb_method,
-        }
     return report
 
 
-def _load_findings(path: Path, policy: ScanLimits) -> list[dict[str, Any]]:
+def _load_findings(path: Path, policy: ScanLimits) -> dict[str, Any]:
     """Read a detector JSON report, rejecting anything that is not a supported one."""
     try:
         report = json.loads(read_limited(path, policy).decode("utf-8"))
@@ -583,7 +632,7 @@ def _load_findings(path: Path, policy: ScanLimits) -> list[dict[str, Any]]:
     version = str(report.get("schema_version", SCHEMA_VERSION))
     if version.split(".")[0] != SCHEMA_VERSION.split(".")[0]:
         raise ValueError(f"unsupported findings schema version: {version}")
-    return report["results"]
+    return report
 
 
 def _meets_severity(severity: Any, minimum: str) -> bool:
@@ -644,8 +693,20 @@ def process_findings(
 
     items: list[dict[str, Any]] = []
     seen: set[str] = set()
+    findings = _load_findings(Path(findings_path), policy)
+    skipped = (
+        [
+            entry
+            for entry in findings.get("skipped", [])
+            if isinstance(entry, dict)
+            and isinstance(entry.get("reason"), str)
+            and isinstance(entry.get("file"), str)
+        ]
+        if isinstance(findings.get("skipped"), list)
+        else []
+    )
     below_threshold = 0
-    for entry in _load_findings(Path(findings_path), policy):
+    for entry in findings["results"]:
         name = entry.get("file") if isinstance(entry, dict) else None
         if not isinstance(name, str) or not name:
             items.append({"file": None, "status": "ERROR", "error": "report entry has no file"})
@@ -654,18 +715,33 @@ def process_findings(
             continue
         seen.add(name)
         severity = entry.get("severity")
-        if not _meets_severity(severity, min_severity):
-            if entry.get("incomplete_reasons") or entry.get("error"):
-                items.append(
-                    {
-                        "file": name,
-                        "severity": severity,
-                        "status": "SCAN_INCOMPLETE",
-                        "error": "the detector did not finish scanning this file",
-                    }
-                )
-            else:
-                below_threshold += 1
+        if entry.get("inspection_status") == "NOT_SUPPORTED":
+            items.append(
+                {
+                    "file": name,
+                    "severity": severity,
+                    "status": "NOT_SUPPORTED",
+                    "error": entry.get("unsupported_reason")
+                    or "Input was unsupported by detection.",
+                }
+            )
+            continue
+        meets_threshold = _meets_severity(severity, min_severity)
+        if (operation == "sanitize" or not meets_threshold) and (
+            entry.get("incomplete_reasons") or entry.get("error")
+        ):
+            items.append(
+                {
+                    "file": name,
+                    "severity": severity,
+                    "status": "SCAN_INCOMPLETE",
+                    "error": "The detector did not finish scanning this file.",
+                }
+            )
+            continue
+        if not meets_threshold:
+            below_threshold += 1
+            skipped.append({"file": name, "reason": "Below the requested severity threshold."})
             continue
         item: dict[str, Any] = {"file": name, "severity": severity}
         items.append(item)
@@ -674,7 +750,11 @@ def process_findings(
             if not source.exists():
                 item.update(status="MISSING", error="file no longer exists")
             elif operation == "decode":
-                item.update(status="OK", result=decode_file(source, limits=policy))
+                outcome = decode_file(source, limits=policy)
+                item.update(
+                    status="OK" if outcome["status"] == "DECODED" else outcome["status"],
+                    result=outcome,
+                )
             else:
                 destination = _batch_destination(source, target_dir) if target_dir else None
                 outcome = sanitize_file(
@@ -686,14 +766,22 @@ def process_findings(
                     profile=profile,
                     channels=selected,
                 )
-                item.update(
-                    status="OK",
-                    result=outcome,
-                    clean_after=_is_clean_after(Path(outcome["sanitized_path"]), policy),
-                )
+                item["result"] = outcome
+                if "sanitized_path" in outcome:
+                    item.update(
+                        status="OK",
+                        clean_after=_is_clean_after(Path(outcome["sanitized_path"]), policy),
+                    )
+                else:
+                    item["status"] = outcome["sanitization_status"]
         except (OSError, TypeError, ValueError) as exc:
             item.update(status="ERROR", error=str(exc))
 
+    outcome_counts: dict[str, int] = {"SKIPPED": len(skipped)} if skipped else {}
+    for item in items:
+        result = item.get("result", {})
+        outcome = result.get("sanitization_status") or result.get("status") or item["status"]
+        outcome_counts[outcome] = outcome_counts.get(outcome, 0) + 1
     failed = sum(item["status"] != "OK" for item in items)
     return {
         "schema_version": SCHEMA_VERSION,
@@ -704,5 +792,7 @@ def process_findings(
         "succeeded": len(items) - failed,
         "failed": failed,
         "below_threshold": below_threshold,
+        "skipped": skipped,
+        "outcome_counts": outcome_counts,
         "results": items,
     }

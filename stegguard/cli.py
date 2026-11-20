@@ -12,7 +12,6 @@ import sys
 from stegguard.common import DARK_CYAN, color, use_utf8_output
 from stegguard.help_format import CommandListFormatter, StyledParser
 from stegguard.operations import (
-    BINARY_SANITIZE_CHANNELS,
     SANITIZE_CHANNELS,
     SANITIZE_PROFILES,
     SEVERITY_LEVELS,
@@ -93,7 +92,7 @@ def cmd_sanitize(args):
         channels=args.channels,
     )
     print(json.dumps(result, indent=2, ensure_ascii=False))
-    return 0
+    return 0 if "sanitized_path" in result else 2
 
 
 def cmd_watermark(args):
@@ -212,6 +211,7 @@ exit codes:
 _SANITIZE_DESCRIPTION = """\
 Write a cleaned copy and print a JSON report of every change.
 
+Rewriting is limited to validated .txt and .log files.
 The copy is saved next to the input as NAME.sanitized.EXT, and an existing file
 is never overwritten. The original stays untouched unless you pass --in-place
 --confirm.
@@ -220,13 +220,12 @@ is never overwritten. The original stays untouched unless you pass --in-place
 _SANITIZE_EPILOG = """\
 examples:
   stegguard sanitize suspicious.txt
-  stegguard sanitize photo.png --profile destructive
+  stegguard sanitize events.log --profile destructive
   stegguard sanitize --from-findings findings.json --output-dir clean/
 
 exit codes:
-  0  Finished. This doesn't mean the file is clean: check "sanitization_status"
-     in the report, where anything but SANITIZED means hidden content may remain
-  2  Invalid input, or a file couldn't be processed
+  0  Sanitization completed
+  2  Invalid input, unsupported format or channel, or processing failure
 """
 
 _WATERMARK_DESCRIPTION = """\
@@ -317,10 +316,8 @@ def build_parser():
         choices=SANITIZE_PROFILES,
         default="conservative",
         help=(
-            "conservative (default) keeps hidden characters with a legitimate use and color "
-            "or C2PA data, and clears pixel LSBs only when it finds evidence of a payload, "
-            "warning if it keeps them. destructive removes all of these, including LSBs, "
-            "and can change legitimate text"
+            "conservative (default) keeps hidden characters with a legitimate use. "
+            "destructive can change legitimate text"
         ),
     )
     p_sanitize.add_argument(
@@ -331,8 +328,7 @@ def build_parser():
         metavar="CHANNEL",
         help=(
             "Run only this transformation; repeat to select several (default: all for the "
-            f"file type). Text files: {', '.join(TEXT_SANITIZE_CHANNELS)}. "
-            f"Binary files: {', '.join(BINARY_SANITIZE_CHANNELS)}"
+            f"file type). Supported text channels: {', '.join(TEXT_SANITIZE_CHANNELS)}"
         ),
     )
     add_limit_arguments(p_sanitize)

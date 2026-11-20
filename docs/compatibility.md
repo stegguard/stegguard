@@ -33,6 +33,38 @@ major release if machine contracts remain stable.
 that could not be processed makes the operation incomplete. Findings from `watermark` are
 reported in JSON; only `detect` currently uses `1` for a positive result.
 
+### Supported file types
+
+File admission and operation capabilities are defined in
+[stegguard/formats.py](../stegguard/formats.py). Detection can use a generic
+byte-pattern scan for binary files. The availability of metadata, structural,
+pixel, and robust-media checks depends on the format and installed analyzers.
+
+| Detection input | Extensions and filenames |
+| --- | --- |
+| Text and markup | `.txt`, `.log`, `.md`, `.tex`, `.rtf`, `.csv`, `.tsv`, `.svg`, `.xml`, `.html`, `.htm`, `.asp`, `.jsp` |
+| Configuration and data | `.htaccess`, `.json`, `.yaml`, `.yml`, `.toml`, `.ini`, `.conf`, `.env`, `.gitignore`, `.kubeconfig`, `Dockerfile` |
+| Source and build files | `.py`, `.js`, `.ts`, `.java`, `.cpp`, `.c`, `.go`, `.rs`, `.rb`, `.php`, `.css`, `.scss`, `.jsx`, `.tsx`, `.vue`, `.sh`, `.bat`, `.tf`, `.gradle`, `.pom` |
+| Documents and e-books | `.doc`, `.docx`, `.pptx`, `.xls`, `.xlsx`, `.odt`, `.ods`, `.pages`, `.pdf`, `.epub` |
+| Images | `.jpg`, `.jpeg`, `.png`, `.gif`, `.bmp`, `.tiff`, `.tif`, `.webp`, `.ico`, `.heic`, `.psd` |
+| Video | `.mp4`, `.mkv`, `.avi`, `.mov`, `.wmv`, `.flv`, `.webm`, `.m4v`, `.mpg`, `.mpeg`, `.3gp` |
+| Audio | `.mp3`, `.wav`, `.aac`, `.flac`, `.ogg`, `.m4a`, `.wma`, `.aiff`, `.opus`, `.mid` |
+| Archives and packages | `.zip`, `.jar`, `.rar`, `.7z`, `.tar`, `.gz`, `.bz2`, `.iso`, `.dmg`, `.pkg`, `.deb`, `.apk`, `.ipa` |
+| Executables and raw binary | `.exe`, `.msi`, `.app`, `.dll`, `.sys`, `.bin`, `.wasm` |
+| Binary data | `.parquet`, `.avro`, `.sqlite`. SQLite is recognized and reported as unsupported for database content inspection. |
+
+Extensionless text is also eligible for detection. Recognized signatures can
+route files to binary or container inspection even when the extension suggests
+text. A report's `inspection_status`, `checks_run`, and analyzer statuses describe
+the coverage for that file.
+
+| Operation | Supported inputs |
+| --- | --- |
+| Text decode | The text, configuration, and source types above, plus extensionless text, when the contents pass text validation. Supports UTF-8 and BOM-marked UTF-16. |
+| Binary metadata decode | `.png`, `.jpg`, `.jpeg`, `.gif`, `.tif`, `.tiff`, `.mp3`, `.pdf`, `.zip`, `.jar`, `.apk`, `.docx`, `.xlsx`, `.odt`, `.ods`, when the metadata parses. |
+| Pixel LSB decode | `.png`, `.bmp`, `.gif`, `.tif`, `.tiff`, when pixels can be decoded. The decoder looks for readable text starting at the first sample. |
+| Sanitize | Validated plain-text `.txt` and `.log` files in UTF-8 or BOM-marked UTF-16. Known binary and structured content signatures are rejected before rewriting. |
+
 ### What counts as an incomplete scan
 
 | Analysis | When it does not finish | Effect |
@@ -56,7 +88,7 @@ before treating `clean` as conclusive.
 | `zero_width` | Keeps emoji joiners, joiners between letters of scripts that use them, zero-width spaces in unspaced scripts, direction marks beside right-to-left text, and a leading byte order mark. Removes the rest | Removes all |
 | `bidi` | Removes all | Removes all |
 | `homoglyphs` | Replaces lookalikes only inside words otherwise made of Latin letters | Replaces all, including in non-Latin words |
-| `trailing_whitespace` | Removes it, except two spaces for a hard break in Markdown files | Removes all |
+| `trailing_whitespace` | Removes it | Removes all |
 | `line_endings` | Converts mixed files to their most common ending and leaves consistent files alone | Converts all to LF |
 
 The conservative profile is not a guarantee that a file is free of hidden data.
@@ -71,14 +103,11 @@ that behavior, pass `--profile destructive` or `profile="destructive"`. Reports 
 `policy`, `warnings`, and the `changes` keys `zero_width_preserved`,
 `homoglyphs_preserved`, and `hard_breaks_preserved`.
 
-`sanitize` and `sanitize_file()` previously copied binary files unchanged. They
-now remove metadata and can clear pixel LSBs in supported formats, so the output
-can differ from the input. To keep the old result for a binary file, select only
-text channels, such as `--channel zero_width`. Binary reports add a `binary` key
-and the `changes` keys `metadata_removed`, `trailing_bytes_removed`, and
-`lsb_samples_cleared`. `sanitization_status` can now be `PARTIAL`, which still
-exits `0`, so check the status rather than the exit code to confirm a file was
-fully cleaned.
+Earlier versions offered binary sanitization. The current rewrite policy allows
+validated plain text only. A file or channel outside that policy returns
+`NOT_SUPPORTED`, and staged output that fails validation returns
+`VALIDATION_FAILED`. Both outcomes exit `2` in the CLI. Published text output
+returns `SANITIZED` or `PARTIAL` with exit `0`.
 
 `decode_file()` now returns `metadata` and `lsb` with status `DECODED` for
 supported binary files, instead of `NOT_SUPPORTED`.

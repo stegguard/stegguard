@@ -468,6 +468,74 @@ def test_scan_reports_typography_patterns_and_hidden_html_layout(tmp_path):
     assert {"TEXT_PATTERN", "LAYOUT", "NETWORK_OR_EXTERNAL"} <= categories
 
 
+@pytest.mark.parametrize(
+    ("encoding", "bom"),
+    [
+        ("utf-8", b""),
+        ("utf-16-le", b"\xff\xfe"),
+        ("utf-16-be", b"\xfe\xff"),
+    ],
+)
+def test_html_stylesheet_detects_matching_hidden_class(tmp_path, encoding, bom):
+    path = tmp_path / "marked.html"
+    content = (
+        '<p class="visible marker">hidden\u200b</p>'
+        "<style>/* comment */ .marker, .fallback { DISPLAY: none !important; }</style>"
+        '<a href="https://example.test/payload">link</a>'
+    )
+    path.write_bytes(bom + content.encode(encoding))
+
+    result = detector.analyze_file(path)
+    assert result["total_hidden"] == 1
+    findings = {finding["detector"]: finding for finding in result["watermark"]["findings"]}
+    assert findings["hidden_layout_style"]["evidence"]["patterns"] == ["display_none"]
+    assert findings["external_payload_reference"]["evidence"]["urls"] == [
+        "https://example.test/payload"
+    ]
+
+
+def test_html_stylesheet_uses_existing_layout_patterns_for_simple_selectors(tmp_path):
+    path = tmp_path / "marked.html"
+    path.write_text(
+        "<style>p {font-size:0px} #marker {opacity:0} .hidden {visibility:hidden}</style>"
+        "<p id='marker' class='hidden'>hidden</p>",
+        encoding="utf-8",
+    )
+
+    finding = next(
+        item for item in scan_file(path)["findings"] if item["detector"] == "hidden_layout_style"
+    )
+    assert set(finding["evidence"]["patterns"]) == {
+        "zero_opacity",
+        "zero_font",
+        "visibility_hidden",
+    }
+
+
+@pytest.mark.parametrize(
+    "markup",
+    [
+        "<style>.marker {display: none}</style><p class='marker-suffix'>visible</p>",
+        "<!-- <style>.marker {display: none}</style> --><p class='marker'>visible</p>",
+        "<script>let x = '<style>.marker {display: none}</style>'</script><p class='marker'>visible</p>",
+        "<style>/* .marker {display: none} */</style><p class='marker'>visible</p>",
+        "<style>.marker {content: ';display:none;'}</style><p class='marker'>visible</p>",
+        "<style>.marker {background:url(data:;display:none;)}</style><p class='marker'>visible</p>",
+        "<style>.marker:hover {display: none}</style><p class='marker'>visible</p>",
+        "<style media='print'>.marker {display: none}</style><p class='marker'>visible</p>",
+        "<style>.Marker {display: none}</style><p class='marker'>visible</p>",
+        "<style>style {display: none}</style><p>visible</p>",
+        "<textarea><style>.marker {display: none}</style></textarea><p class='marker'>visible</p>",
+        "<style>.marker {.nested {color:red;display:none;}}</style><p class='marker'>visible</p>",
+    ],
+)
+def test_html_ignores_inapplicable_stylesheet_declarations(tmp_path, markup):
+    path = tmp_path / "visible.html"
+    path.write_text(markup, encoding="utf-8")
+
+    assert not any(finding["category"] == "LAYOUT" for finding in scan_file(path)["findings"])
+
+
 def test_external_url_evidence_excludes_markdown_punctuation(tmp_path):
     path = tmp_path / "links.md"
     path.write_text("See [site](https://example.test/path).", encoding="utf-8")

@@ -162,7 +162,7 @@ def test_readme_repository_links_point_at_files_in_the_repository():
         "https://raw.githubusercontent.com/stegguard/stegguard/main/",
     )
     linked = {
-        target.removeprefix(prefix)
+        target.removeprefix(prefix).partition("#")[0]
         for target in re.findall(r"(https://[^)\s\"]+)", readme)
         for prefix in prefixes
         if target.startswith(prefix)

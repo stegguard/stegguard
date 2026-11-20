@@ -13,11 +13,26 @@ from __future__ import annotations  # Defer evaluation of type annotations
 import sys
 import os
 import argparse
+import re
 import struct
+import unicodedata
 from dataclasses import dataclass
+from functools import cache
 from pathlib import Path
 from typing import Any, Mapping
 
+from stegguard.formats import (
+    ALL_EXTENSIONS,
+    BINARY_EXTENSIONS,
+    BINARY_SIGNATURES,
+    FORMAT_ALIASES,
+    LSB_FORMATS,
+    STRUCTURED_ARCHIVES,
+    TEXT_EXTENSIONS,
+    format_name,
+    signature_format,
+    text_encoding,
+)
 from stegguard.limits import (
     ResourceLimitError,
     ScanLimits,
@@ -142,122 +157,6 @@ class BinaryHit:
 
 
 # ─── File-type classification ─────────────────────────────────────────────────
-
-TEXT_EXTENSIONS: set[str] = {
-    ".txt",
-    ".md",
-    ".tex",
-    ".rtf",
-    ".log",
-    ".csv",
-    ".tsv",
-    ".svg",
-    ".xml",
-    ".html",
-    ".htm",
-    ".asp",
-    ".jsp",
-    ".htaccess",
-    ".json",
-    ".yaml",
-    ".yml",
-    ".toml",
-    ".ini",
-    ".conf",
-    ".env",
-    ".gitignore",
-    ".kubeconfig",
-    "dockerfile",
-    ".py",
-    ".js",
-    ".ts",
-    ".java",
-    ".cpp",
-    ".c",
-    ".go",
-    ".rs",
-    ".rb",
-    ".php",
-    ".css",
-    ".scss",
-    ".jsx",
-    ".tsx",
-    ".vue",
-    ".sh",
-    ".bat",
-    ".tf",
-    ".gradle",
-    ".pom",
-}
-
-BINARY_EXTENSIONS: set[str] = {
-    ".doc",
-    ".docx",
-    ".xls",
-    ".xlsx",
-    ".odt",
-    ".ods",
-    ".pages",
-    ".pdf",
-    ".jpg",
-    ".jpeg",
-    ".png",
-    ".gif",
-    ".bmp",
-    ".tiff",
-    ".tif",
-    ".webp",
-    ".ico",
-    ".heic",
-    ".psd",
-    ".mp4",
-    ".mkv",
-    ".avi",
-    ".mov",
-    ".wmv",
-    ".flv",
-    ".webm",
-    ".m4v",
-    ".mpg",
-    ".mpeg",
-    ".3gp",
-    ".mp3",
-    ".wav",
-    ".aac",
-    ".flac",
-    ".ogg",
-    ".m4a",
-    ".wma",
-    ".aiff",
-    ".opus",
-    ".mid",
-    ".zip",
-    ".rar",
-    ".7z",
-    ".tar",
-    ".gz",
-    ".bz2",
-    ".iso",
-    ".dmg",
-    ".pkg",
-    ".deb",
-    ".exe",
-    ".msi",
-    ".app",
-    ".dll",
-    ".sys",
-    ".bin",
-    ".wasm",
-    ".apk",
-    ".ipa",
-    ".parquet",
-    ".avro",
-}
-
-ALL_EXTENSIONS: set[str] = TEXT_EXTENSIONS | BINARY_EXTENSIONS
-
-# Formats that support pixel-level LSB steganalysis
-LSB_FORMATS: set[str] = {".png", ".bmp", ".gif", ".tif", ".tiff"}
 
 # Pillow availability — graceful fallback to built-in parsers when absent
 try:
@@ -394,6 +293,8 @@ def _jpeg_metadata_ranges(raw: bytes) -> list[tuple[int, int]]:
 def analyze_binary_file(
     filepath: Path,
     limits: ScanLimits | Mapping[str, Any] | None = None,
+    *,
+    raw: bytes | None = None,
 ) -> dict:
     """Scan a binary file for suspicious UTF-8 byte sequences in metadata.
     PNG and JPEG files are parsed structurally so that only metadata sections
@@ -418,23 +319,27 @@ def analyze_binary_file(
     }
     policy = resolve_limits(limits)
     try:
-        raw = read_limited(filepath, policy)
+        if raw is None:
+            raw = read_limited(filepath, policy)
     except Exception as exc:
         results["error"] = str(exc)
         return results
 
     size = len(raw)
 
-    # Choose which byte ranges to scan based on file format magic bytes.
-    # PNG and JPEG only scan metadata sections; other formats scan the full file.
-    ext = filepath.suffix.lower()
-    if ext == ".png" or raw[:8] == b"\x89PNG\r\n\x1a\n":
+    from stegguard.watermark import container_format
+
+    ext = signature_format(raw) or filepath.suffix.lower()
+    if ext in {".pdf", ".mp4", ".mov", ".m4v", ".3gp"} or container_format(raw, ext):
+        scan_ranges = []
+    elif ext == ".png" or raw[:8] == b"\x89PNG\r\n\x1a\n":
         scan_ranges = _png_metadata_ranges(raw)
     elif ext in (".jpg", ".jpeg") or raw[:2] == b"\xff\xd8":
         scan_ranges = _jpeg_metadata_ranges(raw)
     else:
         scan_ranges = [(0, size)]
 
+    results["checks_run"] = ["Binary byte patterns"] if scan_ranges else []
     seen: set[int] = set()  # deduplicate hits at the same byte offset
     limit_reached = False
     for range_start, range_end in scan_ranges:
@@ -467,6 +372,17 @@ def analyze_binary_file(
     return results
 
 
+@cache
+def _standard_emoji_sequences() -> re.Pattern[str]:
+    source = Path(__file__).with_name("data") / "emoji-zwj-16.txt"
+    sequences = [
+        "".join(chr(int(codepoint, 16)) for codepoint in line.split())
+        for line in source.read_text(encoding="ascii").splitlines()
+        if line and not line.startswith("#")
+    ]
+    return re.compile("|".join(re.escape(s) for s in sorted(sequences, key=len, reverse=True)))
+
+
 def analyze_file(
     filepath: Path,
     verbose: bool = False,
@@ -477,16 +393,6 @@ def analyze_file(
     Lossless images (PNG, BMP, GIF, TIFF) additionally receive LSB steganalysis.
     """
     policy = resolve_limits(limits)
-    if filepath.suffix.lower() in BINARY_EXTENSIONS:
-        result = analyze_binary_file(filepath, policy)
-        result["lsb_analysis"] = (
-            analyze_lsb_image(filepath, verbose, policy)
-            if filepath.suffix.lower() in LSB_FORMATS
-            else None
-        )
-        _attach_watermark_scan(result, filepath, policy)
-        return result
-
     results: dict = {
         "schema_version": SCHEMA_VERSION,
         "file": str(filepath),
@@ -506,28 +412,66 @@ def analyze_file(
         results["error"] = str(exc)
         return results
 
-    # Detect mixed line endings
-    crlf = raw.count(b"\r\n")
-    lf_only = raw.count(b"\n") - crlf
-    cr_only = raw.count(b"\r") - crlf
-    if sum(x > 0 for x in [crlf, lf_only, cr_only]) > 1:
-        results["mixed_line_endings"] = True
+    from stegguard.watermark import container_format
 
+    suffix = filepath.suffix.lower()
+    kind = container_format(raw, suffix)
+    signature = signature_format(raw)
+    declared = FORMAT_ALIASES.get(suffix, suffix)
+    if (declared in BINARY_SIGNATURES and not signature and not kind) or (
+        suffix in STRUCTURED_ARCHIVES and kind != suffix
+    ):
+        field = "unsupported_reason" if declared == ".sqlite" else "error"
+        results[field] = "Content does not match the declared file format."
+        return results
+    if kind or signature or suffix in BINARY_EXTENSIONS:
+        results = analyze_binary_file(filepath, policy, raw=raw)
+        results["lsb_analysis"] = (
+            analyze_lsb_image(filepath, verbose, policy)
+            if not kind and signature == declared and suffix in LSB_FORMATS
+            else None
+        )
+        if results["lsb_analysis"] is not None:
+            results["checks_run"].append("Pixel LSB")
+        _attach_watermark_scan(results, filepath, policy)
+        if kind == ".sqlite":
+            results["unsupported_reason"] = "SQLite database content inspection is unsupported."
+        return results
+
+    if format_name(filepath) not in TEXT_EXTENSIONS | {""}:
+        results["unsupported_reason"] = "File extension has no inspection handler."
+        return results
+
+    byte_encoding, bom = text_encoding(raw)
+    bom_size = len(bom)
     try:
-        text = raw.decode("utf-8")
-        byte_encoding = "utf-8"
-    except UnicodeDecodeError:
-        try:
-            text = raw.decode("latin-1")
-            byte_encoding = "latin-1"
-        except Exception as exc:
+        text = raw[bom_size:].decode(byte_encoding)
+    except UnicodeDecodeError as exc:
+        if bom:
             results["error"] = f"Decode error: {exc}"
             return results
+        text = raw.decode("latin-1")
+        byte_encoding = "latin-1"
+
+    if "\0" in text:
+        results["unsupported_reason"] = "Unrecognized binary content in text input."
+        return results
+
+    results["checks_run"] = ["Unicode text", "Whitespace and line endings"]
+    crlf = text.count("\r\n")
+    lf_only = text.count("\n") - crlf
+    cr_only = text.count("\r") - crlf
+    results["mixed_line_endings"] = sum(x > 0 for x in (crlf, lf_only, cr_only)) > 1
+
+    alphabet_names = {
+        unicodedata.name(ch, "").partition(" ")[0] for ch in set(text) if ch.isalpha()
+    }
+    single_script_prose = alphabet_names in ({"GREEK"}, {"CYRILLIC"})
 
     lines = text.splitlines(keepends=True)
 
-    char_offset = 0  # running absolute char position through file
-    line_byte_offset = 0
+    char_offset = 0
+    line_byte_offset = bom_size
     limit_reached = False
 
     for line_num, line in enumerate(lines, 1):
@@ -549,12 +493,25 @@ def analyze_file(
                 TrailingFinding(line_num, trailing, trail_byte)
             )
 
+        standard_joiners = (
+            {
+                match.start() + index
+                for match in _standard_emoji_sequences().finditer(line)
+                for index, char in enumerate(match.group())
+                if char == "\u200d"
+            }
+            if "\u200d" in line
+            else set()
+        )
+
         # Character-level scan
         byte_offset = line_byte_offset
         for col, ch in enumerate(line, 1):
             abs_i = char_offset + col - 1
             boff = byte_offset
             byte_offset += len(ch.encode(byte_encoding))
+            if col - 1 in standard_joiners:
+                continue
             if ch in ZERO_WIDTH_CHARS:
                 if (
                     results["total_hidden"] + len(results["trailing_whitespace_lines"])
@@ -567,7 +524,7 @@ def analyze_file(
                     ZwcFinding(line_num, col, abs_i, boff, ch, ZERO_WIDTH_CHARS[ch])
                 )
                 results["total_hidden"] += 1
-            elif ch in HOMOGLYPH_CHARS:
+            elif ch in HOMOGLYPH_CHARS and not single_script_prose:
                 if (
                     results["total_hidden"] + len(results["trailing_whitespace_lines"])
                     >= policy.max_findings
@@ -612,6 +569,7 @@ def _attach_watermark_scan(
         from stegguard.watermark import scan_file
 
         results["watermark"] = scan_file(str(filepath), limits=limits)
+        results.setdefault("checks_run", []).append("Watermark and provenance")
     except Exception as exc:
         results["watermark"] = {
             "file": str(filepath),
@@ -673,6 +631,9 @@ def print_results(results: dict, verbose: bool = False, decode: bool = False):
 
     if results["error"]:
         print(color(f"  ERROR: {results['error']}", RED))
+        return
+    if reason := results.get("unsupported_reason"):
+        print(color(f"  UNSUPPORTED: {reason}", YELLOW))
         return
     watermark = results.get("watermark") or {}
     partial_errors = scan_failure_reasons(results)
@@ -1448,6 +1409,15 @@ def result_to_json_dict(r: dict) -> dict:
         "schema_version": SCHEMA_VERSION,
         "file": r["file"],
         "file_mode": r.get("file_mode", "text"),
+        "inspection_status": (
+            "INCOMPLETE"
+            if result_is_incomplete(r)
+            else "NOT_SUPPORTED"
+            if r.get("unsupported_reason")
+            else "INSPECTED"
+        ),
+        "unsupported_reason": r.get("unsupported_reason"),
+        "checks_run": r.get("checks_run", []),
         "severity": sev_class,
         "sha256": r["sha256"],
         "total_hidden": r["total_hidden"],
@@ -1513,25 +1483,31 @@ def result_to_json_dict(r: dict) -> dict:
     }
 
 
-def write_json_output(all_results: list, path: str) -> None:
+def write_json_output(all_results: list, path: str, excluded=()) -> None:
     """Write scan results as structured JSON for steg_decoder.py consumption."""
     import json, datetime
 
     serialized = [result_to_json_dict(r) for r in all_results]
     flagged = sum(1 for result in all_results if result_is_flagged(result))
     incomplete = sum(1 for result in all_results if result_is_incomplete(result))
+    unsupported = sum(item["inspection_status"] == "NOT_SUPPORTED" for item in serialized)
     payload = {
         "schema_version": SCHEMA_VERSION,
         "stegguard_version": __version__,
         "scan_time": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "total_files": len(all_results),
+        "skipped_files": len(excluded),
+        "skipped": [{"file": str(file), "reason": reason} for file, reason in excluded],
         "flagged_files": flagged,
         "incomplete_files": incomplete,
-        "completed_files": len(all_results) - incomplete,
+        "unsupported_files": unsupported,
+        "completed_files": len(all_results) - incomplete - unsupported,
         "clean_files": sum(
             1
             for result in all_results
-            if not result_is_flagged(result) and not result_is_incomplete(result)
+            if not result_is_flagged(result)
+            and not result_is_incomplete(result)
+            and not result.get("unsupported_reason")
         ),
         "results": serialized,
     }
@@ -1829,7 +1805,7 @@ h1{font-family:var(--disp);font-size:1.9rem;font-weight:600;line-height:1.2}
 """
 
 
-def generate_html_report(all_results, output_path):
+def generate_html_report(all_results, output_path, excluded=()):
     from datetime import datetime
     from html import escape
     from pathlib import Path as P
@@ -1838,6 +1814,10 @@ def generate_html_report(all_results, output_path):
     total_files = len(all_results)
     flagged_files = sum(1 for result in all_results if result_is_flagged(result))
     incomplete_files = sum(1 for result in all_results if result_is_incomplete(result))
+    unsupported_files = sum(bool(result.get("unsupported_reason")) for result in all_results)
+    files_with_unavailable_checks = sum(
+        bool(_watermark_unchecked_notes(result.get("watermark") or {})) for result in all_results
+    )
     zw_total = sum(len(r["zero_width"]) for r in all_results)
     hg_total = sum(len(r["homoglyphs"]) for r in all_results)
     os_total = sum(len(r["other_suspicious"]) for r in all_results)
@@ -1846,7 +1826,12 @@ def generate_html_report(all_results, output_path):
     lsb_total = sum(
         1 for r in all_results if (r.get("lsb_analysis") or {}).get("suspicious_channels")
     )
-    total_threats = sum(r["total_hidden"] for r in all_results)
+    match_count = sum(r["total_hidden"] for r in all_results)
+    analyzer_findings = sum(
+        len(node.get("findings") or [])
+        for result in all_results
+        for _, node in _iter_watermark_tree(result.get("watermark") or {})
+    )
 
     def nested_provenance_entries(watermark: dict):
         entries = []
@@ -1877,6 +1862,8 @@ def generate_html_report(all_results, output_path):
     def sev(r):
         if result_is_incomplete(r):
             return "high", "INCOMPLETE", "var(--critical)"
+        if r.get("unsupported_reason"):
+            return "unsupported", "UNSUPPORTED", "var(--medium)"
         lsb_sus = bool((r.get("lsb_analysis") or {}).get("suspicious_channels"))
         severity = severity_html(
             r["total_hidden"],
@@ -1924,6 +1911,8 @@ def generate_html_report(all_results, output_path):
         )
         tw = r["trailing_whitespace_lines"]
         sections = ""
+        if reason := r.get("unsupported_reason"):
+            sections = f"<p>{escape(reason)}</p>"
         if result_is_incomplete(r):
             incomplete_errors = scan_failure_reasons(r)
             sections = (
@@ -1933,6 +1922,8 @@ def generate_html_report(all_results, output_path):
                 + "".join(f"<li>{escape(str(error))}</li>" for error in incomplete_errors)
                 + "</ul></div>"
             )
+        if checks := r.get("checks_run"):
+            sections += f"<p>Checks run {escape(', '.join(checks))}</p>"
         watermark = r.get("watermark") or {}
         watermark_findings = [
             (member_path, finding)
@@ -1985,6 +1976,7 @@ def generate_html_report(all_results, output_path):
             f"<tr><td>{escape(member_path)}</td>"
             f"<td>{escape(str(finding.get('category', '')))}</td>"
             f"<td>{escape(str(finding.get('detector', '')))}</td>"
+            f"<td>{escape(str(finding.get('location', '')))}</td>"
             f"<td>{escape(str(finding.get('description', '')))}</td>"
             f"<td>{escape(str(finding.get('risk', 'informational')))}</td>"
             f"<td>{float(finding.get('confidence', 0.0)):.0%}</td></tr>"
@@ -1995,7 +1987,7 @@ def generate_html_report(all_results, output_path):
             '<span class="bdg">WM</span><span class="ftt">Categorized Watermark Findings</span>'
             f'<span class="fc">{len(watermark_findings)} found</span></div>'
             '<table class="tbl"><thead><tr><th>Member</th><th>Category</th><th>Detector</th>'
-            "<th>Description</th><th>Risk</th><th>Confidence</th></tr></thead>"
+            "<th>Location</th><th>Description</th><th>Risk</th><th>Confidence</th></tr></thead>"
             f"<tbody>{watermark_rows}</tbody></table></div>"
             if watermark_rows
             else ""
@@ -2283,17 +2275,30 @@ def generate_html_report(all_results, output_path):
         f"<div>Files scanned: <strong>{total_files}</strong></div>",
         f'<div>Files flagged: <strong class="tone" style="--c:{fg_color}">{flagged_files}</strong></div>',
         f'<div>Incomplete: <strong class="tone" style="--c:var(--critical)">{incomplete_files}</strong></div>',
+        f"<div>Skipped inputs: <strong>{len(excluded)}</strong></div>",
+        "<div>Inspection only · Sanitization and output validation were not run in this scan.</div>",
         "</div></div></header>",
+        *(
+            ["<details><summary>Skipped inputs and reasons</summary><ul>"]
+            + [f"<li>{escape(str(path))} — {escape(reason)}</li>" for path, reason in excluded]
+            + ["</ul></details>"]
+            if excluded
+            else []
+        ),
         '<div class="sg">',
         f'<div class="sc" style="--c:var(--critical)"><div class="sn">{flagged_files}</div><div class="sl">Flagged Files</div><div class="ss">of {total_files} scanned</div></div>',
         f'<div class="sc" style="--c:var(--critical)"><div class="sn">{incomplete_files}</div><div class="sl">Incomplete Files</div><div class="ss">not counted as clean</div></div>',
+        f'<div class="sc" style="--c:var(--medium)"><div class="sn">{len(excluded)}</div><div class="sl">Skipped Files</div></div>',
+        f'<div class="sc" style="--c:var(--medium)"><div class="sn">{unsupported_files}</div><div class="sl">Unsupported Files</div></div>',
+        f'<div class="sc" style="--c:var(--medium)"><div class="sn">{files_with_unavailable_checks}</div><div class="sl">Files With Unavailable Checks</div></div>',
         f'<div class="sc" style="--c:var(--medium)"><div class="sn">{zw_total}</div><div class="sl">Zero-Width</div><div class="ss">invisible unicode</div></div>',
         f'<div class="sc" style="--c:var(--critical)"><div class="sn">{hg_total}</div><div class="sl">Homoglyphs</div><div class="ss">lookalike chars</div></div>',
         f'<div class="sc" style="--c:var(--high)"><div class="sn">{os_total}</div><div class="sl">BIDI / Control</div><div class="ss">directional overrides</div></div>',
         f'<div class="sc" style="--c:var(--lsb)"><div class="sn">{lsb_total}</div><div class="sl">LSB Pixel Steg</div><div class="ss">image steganalysis</div></div>',
         f'<div class="sc" style="--c:var(--low)"><div class="sn">{tw_total}</div><div class="sl">Trailing Space</div><div class="ss">potential SNOW steg</div></div>',
         f'<div class="sc" style="--c:var(--eol)"><div class="sn">{ml_total}</div><div class="sl">Mixed Endings</div><div class="ss">LF / CRLF mixed</div></div>',
-        f'<div class="sc" style="--c:var(--accent)"><div class="sn">{total_threats}</div><div class="sl">Total Threats</div><div class="ss">chars flagged</div></div>',
+        f'<div class="sc" style="--c:var(--accent)"><div class="sn">{match_count}</div><div class="sl">Character and Byte Matches</div></div>',
+        f'<div class="sc" style="--c:var(--accent)"><div class="sn">{analyzer_findings}</div><div class="sl">Analyzer Findings</div><div class="ss">watermark scan, including nested files</div></div>',
         f'<div class="sc" style="--c:var(--clean)"><div class="sn">{provenance_valid}</div><div class="sl">Provenance Valid</div><div class="ss">validated manifests</div></div>',
         f'<div class="sc" style="--c:var(--critical)"><div class="sn">{provenance_failures}</div><div class="sl">Validation Failures</div><div class="ss">tampered, untrusted, or unchecked errors</div></div>',
         "</div>",
@@ -2372,7 +2377,7 @@ def generate_html_report(all_results, output_path):
         '<div class="trs"><div class="sh">Threat Reference -- Attack Techniques and Remediation</div>',
         f'<div class="rg">{ref_section()}</div></div>',
         f'<footer class="ftr">StegGuard &nbsp;|&nbsp; Generated {now} &nbsp;|&nbsp; '
-        f"{total_files} files scanned &nbsp;|&nbsp; {total_threats} threats found</footer>",
+        f"{total_files} files scanned &nbsp;|&nbsp; {match_count} character and byte matches</footer>",
         # ── Filter + Summary JS ─────────────────────────────────────────────────
         "<script>\n(function () {\n"
         "  var SEV_COLORS = {\n"
@@ -2669,15 +2674,17 @@ def _load_pixels_pil(path: Path, limits: ScanLimits | None = None):
                 )
 
             if mode == "P":  # palette-indexed
-                palette = list(img.getpalette())  # flat [R,G,B, ...]
+                palette = img.getpalette()  # flat [R,G,B, ...]
+                if palette is None:
+                    return None
                 indices = bytes(img.getdata())
                 return {"indices": indices}, w, h, "P", palette, fmt
 
             if mode not in ("L", "RGB", "RGBA", "LA"):
-                img = img.convert("RGB")
+                px = img.convert("RGB").tobytes()
                 mode = "RGB"
-
-            px = img.tobytes()
+            else:
+                px = img.tobytes()
             bpp = len(mode)
             channels = {name: bytes(px[i::bpp]) for i, name in enumerate(mode)}
             return channels, w, h, mode, None, fmt
@@ -3557,7 +3564,7 @@ def is_venv_path(path: Path) -> bool:
 # ─── File collection ──────────────────────────────────────────────────────────
 
 
-def file_matches(path: Path, extensions: set) -> bool:
+def file_matches(path: Path, extensions: set | None) -> bool:
     """Return True if this file should be scanned.
 
     Handles two cases:
@@ -3569,48 +3576,47 @@ def file_matches(path: Path, extensions: set) -> bool:
     Path('.env').suffix == '' even though '.env' is in TEXT_EXTENSIONS.
     Checking both suffix AND name covers every pattern.
     """
-    if path.suffix.lower() in extensions:
+    if extensions is None or path.suffix.lower() in extensions:
         return True
     if path.name.lower() in extensions:
         return True
     return False
 
 
-def collect_files(root: Path, extensions: set, recursive: bool, skip_venvs: bool) -> tuple:
-    """Collect files to scan.  Returns (files: list[Path], skipped: int)."""
+def collect_files(
+    root: Path,
+    extensions: set | None,
+    recursive: bool,
+    skip_venvs: bool,
+    *,
+    excluded: list[tuple[Path, str]] | None = None,
+) -> tuple[list[Path], int]:
+    """Collect eligible files and count files skipped by the dependency filter."""
     collected: list[Path] = []
     skipped = 0
 
-    if not recursive:
-        for entry in root.iterdir():
-            if entry.is_symlink() or not entry.is_file():
-                continue
-            if not file_matches(entry, extensions):
-                continue
-            if skip_venvs and is_venv_path(entry):
-                skipped += 1
-            else:
-                collected.append(entry)
-        return collected, skipped
+    def record(path: Path, reason: str) -> None:
+        if excluded is not None:
+            excluded.append((path, reason))
 
-    # Recursive walk — prune whole venv subtrees for speed
-    def walk(directory: Path) -> None:
+    def walk(directory: Path, in_dependency: bool = False) -> None:
         nonlocal skipped
         try:
             entries = list(directory.iterdir())
         except PermissionError:
+            record(directory, "permission denied")
             return
         for entry in entries:
             if entry.is_symlink():
-                continue
-            if entry.is_dir():
-                if skip_venvs and is_venv_path(entry):
-                    skipped += sum(1 for _ in entry.rglob("*") if _.is_file())
-                else:
-                    walk(entry)
-            elif entry.is_file() and file_matches(entry, extensions):
-                if skip_venvs and is_venv_path(entry):
+                record(entry, "symbolic link")
+            elif entry.is_dir() and recursive:
+                walk(entry, in_dependency or (skip_venvs and is_venv_path(entry)))
+            elif entry.is_file():
+                if in_dependency or (skip_venvs and is_venv_path(entry)):
                     skipped += 1
+                    record(entry, "venv/dependency directory")
+                elif not file_matches(entry, extensions):
+                    record(entry, "extension filter")
                 else:
                     collected.append(entry)
 
@@ -3714,9 +3720,9 @@ def main(argv: list[str] | None = None) -> int:
     except (TypeError, ValueError) as exc:
         parser.error(str(exc))
 
-    # Build extensions set — always a set, never a generator
+    # A missing extension filter includes all discovered files.
     if args.ext.strip().upper() == "ALL":
-        extensions: set[str] = ALL_EXTENSIONS
+        extensions: set[str] | None = None
     else:
         extensions = {
             e.strip() if e.strip().startswith(".") else f".{e.strip()}"
@@ -3742,7 +3748,7 @@ def main(argv: list[str] | None = None) -> int:
             print(color(f"  Folder: {label}", DIM))
         print(
             color(
-                f"  Scanning {len(files_to_scan)} file(s) across {len(extensions)} extension(s)",
+                f"  Scanning {len(files_to_scan)} file(s)",
                 DIM,
             )
         )
@@ -3766,7 +3772,10 @@ def main(argv: list[str] | None = None) -> int:
                 incomplete += 1
 
         print(color(f"\n{chr(0x2501) * 60}", BOLD))
-        if flagged == 0 and incomplete == 0:
+        unsupported = sum(bool(result.get("unsupported_reason")) for result in all_results)
+        if unsupported:
+            print(color(f"  {unsupported}/{len(files_to_scan)} file(s) unsupported", YELLOW))
+        if flagged == 0 and incomplete == 0 and unsupported == 0:
             print(color(f"  \u2713 All {len(files_to_scan)} file(s) clean\n", GREEN, BOLD))
         if flagged:
             print(color(f"  \u26a0 {flagged}/{len(files_to_scan)} file(s) flagged\n", YELLOW, BOLD))
@@ -3867,18 +3876,21 @@ def main(argv: list[str] | None = None) -> int:
         all_critical_paths: list = []  # accumulates across all folders
         completed_results: list[dict] = []
 
+        combined_excluded = []
         for folder, base in folders_to_scan:
             html_name = folder_to_filename(folder, base)
             html_path = out_dir / html_name
             txt_path = html_path.with_suffix(".critical.txt")
 
+            folder_excluded: list[tuple[Path, str]] = []
             files, skipped = collect_files(
-                folder, extensions, recursive=True, skip_venvs=skip_venvs
+                folder, extensions, recursive=True, skip_venvs=skip_venvs, excluded=folder_excluded
             )
 
             print(color(f"\n\U0001f4c1 {folder}  →  {html_name}", BOLD))
 
-            if not files:
+            combined_excluded.extend(folder_excluded)
+            if not files and not folder_excluded:
                 print(
                     color(
                         f"  (no matching files" + (f", {skipped} skipped" if skipped else "") + ")",
@@ -3890,8 +3902,8 @@ def main(argv: list[str] | None = None) -> int:
             folder_results, folder_flagged = run_scan(files, skipped=skipped, label=str(folder))
             completed_results.extend(folder_results)
 
-            if folder_results:
-                generate_html_report(folder_results, str(html_path))
+            if folder_results or folder_excluded:
+                generate_html_report(folder_results, str(html_path), folder_excluded)
                 folder_incomplete = sum(1 for r in folder_results if result_is_incomplete(r))
                 status_parts = []
                 if folder_flagged:
@@ -3987,13 +3999,13 @@ def main(argv: list[str] | None = None) -> int:
             print(color(f"  \U0001f4dd  {master_txt}  [no critical files found]", DIM))
 
         # Also write a combined summary report if --html is also given
-        if args.html is not None and completed_results:
-            generate_html_report(completed_results, args.html)
+        if args.html is not None and (completed_results or combined_excluded):
+            generate_html_report(completed_results, args.html, combined_excluded)
             print(color(f"  \U0001f4ca  Combined report → {args.html}\n", CYAN, BOLD))
 
         # ── JSON output ───────────────────────────────────────────────────
-        if args.json_out and completed_results:
-            write_json_output(completed_results, args.json_out)
+        if args.json_out and (completed_results or combined_excluded):
+            write_json_output(completed_results, args.json_out, combined_excluded)
             print(color(f"  \U0001f5c2  JSON findings → {args.json_out}\n", CYAN, BOLD))
         return scan_exit_code(completed_results)
 
@@ -4002,29 +4014,37 @@ def main(argv: list[str] | None = None) -> int:
     # ════════════════════════════════════════════════════════════════════════════
     files_to_scan: list = []
     total_skipped = 0
+    excluded: list[tuple[Path, str]] = []
 
     for p in args.paths:
         path = Path(p)
         if path.is_file():
             if skip_venvs and is_venv_path(path):
                 total_skipped += 1
+                excluded.append((path, "venv/dependency directory"))
+            elif not file_matches(path, extensions):
+                excluded.append((path, "extension filter"))
             else:
                 files_to_scan.append(path)
         elif path.is_dir():
-            found, skipped = collect_files(path, extensions, args.recursive, skip_venvs)
+            found, skipped = collect_files(
+                path, extensions, args.recursive, skip_venvs, excluded=excluded
+            )
             files_to_scan.extend(found)
             total_skipped += skipped
         else:
             print(color(f"Warning: {p} not found", YELLOW))
 
+    for path, reason in sorted(excluded):
+        print(color(f"  Skipped {path} ({reason})", DIM))
     all_results, _ = run_scan(files_to_scan, skipped=total_skipped)
 
-    if args.html is not None and all_results:
-        generate_html_report(all_results, args.html)
+    if args.html is not None and (all_results or excluded):
+        generate_html_report(all_results, args.html, excluded)
         print(color(f"  \U0001f4ca HTML report saved \u2192 {args.html}\n", CYAN, BOLD))
 
-    if args.json_out and all_results:
-        write_json_output(all_results, args.json_out)
+    if args.json_out and (all_results or excluded):
+        write_json_output(all_results, args.json_out, excluded)
         print(color(f"  \U0001f5c2  JSON findings → {args.json_out}\n", CYAN, BOLD))
 
     return scan_exit_code(all_results)

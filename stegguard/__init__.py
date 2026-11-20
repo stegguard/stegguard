@@ -10,7 +10,7 @@ from stegguard.schema import SCHEMA_VERSION
 __author__ = "StegGuard"
 __license__ = "Apache-2.0"
 
-from stegguard.detector import analyze_file  # primary public API
+from stegguard.detector import analyze_file, analyze_text  # primary public API
 from stegguard.operations import decode_file, process_findings, sanitize_file
 from stegguard.watermark import scan_file
 
@@ -19,6 +19,7 @@ __all__ = [
     "ResourceLimitError",
     "ScanLimits",
     "analyze_file",
+    "analyze_text",
     "decode_file",
     "process_findings",
     "sanitize_file",

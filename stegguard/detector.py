@@ -393,18 +393,7 @@ def analyze_file(
     Lossless images (PNG, BMP, GIF, TIFF) additionally receive LSB steganalysis.
     """
     policy = resolve_limits(limits)
-    results: dict = {
-        "schema_version": SCHEMA_VERSION,
-        "file": str(filepath),
-        "file_mode": "text",
-        "zero_width": [],
-        "homoglyphs": [],
-        "other_suspicious": [],
-        "trailing_whitespace_lines": [],
-        "mixed_line_endings": False,
-        "total_hidden": 0,
-        "error": None,
-    }
+    results = _empty_text_result(str(filepath))
 
     try:
         raw = read_limited(filepath, policy)
@@ -457,6 +446,43 @@ def analyze_file(
         results["unsupported_reason"] = "Unrecognized binary content in text input."
         return results
 
+    _inspect_text(text, byte_encoding, bom_size, policy, results)
+    _attach_watermark_scan(results, filepath, policy)
+    return results
+
+
+def _empty_text_result(name: str) -> dict:
+    return {
+        "schema_version": SCHEMA_VERSION,
+        "file": name,
+        "file_mode": "text",
+        "zero_width": [],
+        "homoglyphs": [],
+        "other_suspicious": [],
+        "trailing_whitespace_lines": [],
+        "mixed_line_endings": False,
+        "total_hidden": 0,
+        "error": None,
+    }
+
+
+def analyze_text(text: str, limits: ScanLimits | Mapping[str, Any] | None = None) -> dict:
+    """Inspect Unicode and whitespace in an in-memory string without file dispatch."""
+    policy = resolve_limits(limits)
+    results = _empty_text_result("")
+    if len(text) > policy.max_file_bytes or len(text.encode("utf-8")) > policy.max_file_bytes:
+        results["error"] = "Text exceeds max_file_bytes."
+        return results
+    if "\0" in text:
+        results["unsupported_reason"] = "NUL is unsupported in plain text."
+        return results
+    _inspect_text(text, "utf-8", 0, policy, results)
+    return results
+
+
+def _inspect_text(
+    text: str, byte_encoding: str, bom_size: int, policy: ScanLimits, results: dict
+) -> None:
     results["checks_run"] = ["Unicode text", "Whitespace and line endings"]
     crlf = text.count("\r\n")
     lf_only = text.count("\n") - crlf
@@ -554,10 +580,6 @@ def analyze_file(
         line_byte_offset += len(line.encode(byte_encoding))
         if limit_reached:
             break
-
-    _attach_watermark_scan(results, filepath, policy)
-    return results
-
 
 def _attach_watermark_scan(
     results: dict,

@@ -184,19 +184,18 @@ def test_detect_decode_flag_points_to_the_decode_command(plain_terminal, capsys)
     assert "'stegguard decode' covers every payload type" in out
 
 
-def test_sanitize_profile_help_states_when_lsbs_are_cleared(plain_terminal, capsys):
+def test_sanitize_profile_help_explains_text_transformations(plain_terminal, capsys):
     out = " ".join(_help_text(["sanitize", "--help"], capsys).split())
 
-    assert "clears pixel LSBs only when it finds evidence of a payload" in out
-    assert "destructive removes all of these, including LSBs" in out
+    assert "keeps hidden characters with a legitimate use" in out
+    assert "destructive can change legitimate text" in out
 
 
-def test_sanitize_channel_help_separates_text_and_binary_channels(plain_terminal, capsys):
+def test_sanitize_channel_help_lists_supported_text_channels(plain_terminal, capsys):
     out = " ".join(_help_text(["sanitize", "--help"], capsys).split())
 
     assert (
-        "Text files: zero_width, bidi, homoglyphs, trailing_whitespace, line_endings. "
-        "Binary files: metadata, lsb"
+        "Supported text channels: zero_width, bidi, homoglyphs, trailing_whitespace, line_endings"
     ) in out
 
 
@@ -275,7 +274,7 @@ def test_sanitize_refuses_to_overwrite_an_existing_copy_as_documented(tmp_path, 
     assert existing.read_text(encoding="utf-8") == "keep me\n"
 
 
-def test_sanitize_exits_zero_with_a_partial_status_as_documented(tmp_path, capsys):
+def test_sanitize_rejects_archive_as_documented(tmp_path, capsys):
     source = tmp_path / "bundle.zip"
     with zipfile.ZipFile(source, "w") as archive:
         archive.writestr("member.txt", "content")
@@ -283,8 +282,9 @@ def test_sanitize_exits_zero_with_a_partial_status_as_documented(tmp_path, capsy
 
     code = cli_main(["sanitize", str(source)])
 
-    assert code == 0
-    assert json.loads(capsys.readouterr().out)["sanitization_status"] == "PARTIAL"
+    assert code == 2
+    assert json.loads(capsys.readouterr().out)["sanitization_status"] == "NOT_SUPPORTED"
+    assert list(tmp_path.iterdir()) == [source]
 
 
 def test_decode_exits_zero_for_an_unparseable_binary_as_documented(tmp_path, capsys):

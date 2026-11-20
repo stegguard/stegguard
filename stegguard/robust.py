@@ -135,17 +135,22 @@ def analyze_wav(source: Path, raw: bytes) -> dict[str, Any]:
         min(echo_rate // 10, len(echo_samples) // 4),
         max(1, echo_rate // 1000),
     )
-    echo_score = max(
-        (abs(_normalized_autocorrelation(echo_samples, lag)) for lag in candidate_lags),
+    correlations = [
+        (_normalized_autocorrelation(echo_samples, lag), lag) for lag in candidate_lags
+    ]
+    echo_score, peak_lag = max(correlations, default=(0.0, 0))
+    competing_peak = max(
+        (score for score, lag in correlations if abs(lag - peak_lag) > echo_rate // 500),
         default=0.0,
     )
+    isolated_peak = echo_score - competing_peak
     flatness = _spectral_flatness(samples, rate)
     silence_count, silence_regularity = _silence_intervals(samples, rate)
 
     detected: list[str] = []
     if phase_score > 0.02:
         detected.append("phase")
-    if echo_score > 0.92:
+    if echo_score > 0.35 and isolated_peak > 0.2:
         detected.append("echo")
     if flatness > 0.75:
         detected.extend(["spread_spectrum", "spectral"])
@@ -155,7 +160,7 @@ def analyze_wav(source: Path, raw: bytes) -> dict[str, Any]:
         0.95,
         max(
             phase_score * 8,
-            echo_score - 0.5,
+            isolated_peak if "echo" in detected else 0.0,
             flatness,
             silence_regularity if silence_count >= 3 else 0.0,
         ),
@@ -167,7 +172,10 @@ def analyze_wav(source: Path, raw: bytes) -> dict[str, Any]:
         "detected_families": sorted(set(detected)),
         "metrics": {
             "phase": {"discontinuity_ratio": round(phase_score, 6)},
-            "echo": {"max_autocorrelation": round(echo_score, 6)},
+            "echo": {
+                "max_autocorrelation": round(echo_score, 6),
+                "peak_prominence": round(isolated_peak, 6),
+            },
             "spread_spectrum": {"spectral_flatness": round(flatness, 6)},
             "spectral": {"spectral_flatness": round(flatness, 6)},
             "silence_interval": {

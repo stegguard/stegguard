@@ -150,6 +150,9 @@ completed scan with findings, and `2` means invalid input or an incomplete
 scan. The complete compatibility contract is in
 [docs/compatibility.md](https://github.com/stegguard/stegguard/blob/main/docs/compatibility.md).
 
+See [supported file types](docs/compatibility.md#supported-file-types) for the
+extension list and the capabilities of each operation.
+
 ## What it detects
 
 ### Text and source files
@@ -195,6 +198,10 @@ reported as cryptographic validation.
 
 ## Sanitization is deliberately cautious
 
+Sanitization rewrites validated plain-text `.txt` and `.log` files in UTF-8 or
+BOM-marked UTF-16. Documents, source files, archives, and media can be inspected
+with the operations listed in [supported file types](docs/compatibility.md#supported-file-types).
+
 By default, this command:
 
 ```bash
@@ -220,7 +227,7 @@ stegguard sanitize suspicious.txt --in-place --confirm
 
 The default `conservative` profile removes hidden characters only where they have
 no legitimate use. It keeps Russian and other non-Latin text, emoji sequences,
-joiners in scripts such as Persian and Hindi, Markdown hard breaks, and files that
+joiners in scripts such as Persian and Hindi, and files that
 consistently use CRLF. It still repairs a lookalike letter inside a Latin word, so
 `pаypal` with a Cyrillic `а` becomes `paypal`. Anything it keeps can still carry
 data, so the report warns about it and a later scan can still flag it.
@@ -234,40 +241,11 @@ stegguard sanitize suspicious.txt --profile destructive
 ```
 
 To run only some transformations, repeat `--channel` with `zero_width`, `bidi`,
-`homoglyphs`, `trailing_whitespace`, `line_endings`, `metadata`, or `lsb`. Changes to source code can
-alter its behavior, including string literals, so review the diff.
+`homoglyphs`, `trailing_whitespace`, or `line_endings`.
 
-### Binary files
-
-Binary sanitization understands each format and never deletes bytes it cannot
-identify. It uses the `metadata` and `lsb` channels:
-
-| Format | Metadata | Pixel LSBs |
-| --- | --- | --- |
-| PNG | Removes text and unknown chunks, and data after `IEND` | Cleared; palette images become RGB or RGBA so colors survive |
-| BMP | None | Cleared in place for uncompressed 24- and 32-bit images |
-| TIFF | Blanks ASCII, XMP, and IPTC tags in the first directory | Cleared in place for uncompressed 8-bit strips |
-| GIF | Removes comments, plain text, application blocks, and appended data | Not cleared: palette indices cannot lose a bit without changing colors |
-| JPEG | Removes comments and EXIF, XMP, and IPTC segments, and appended data | Not applicable: pixels are transform-coded |
-| ZIP, DOCX, XLSX, PPTX | Removes archive and entry comments | Not applicable |
-| MP3 | Removes ID3v1 and ID3v2 tags | Not applicable |
-| PDF | Blanks Info strings and uncompressed XMP at the same length | Not applicable |
-
-The `conservative` profile keeps color management and C2PA provenance data, and
-clears pixel LSBs only when analysis or decoding finds evidence of a payload. The
-`destructive` profile removes that data too and always clears pixel LSBs.
-
-`sanitization_status` says how far this went:
-
-- `SANITIZED`: every channel the format exposes was handled
-- `PARTIAL`: something was removed or kept with a known gap, such as files inside
-  a ZIP or JPEG image data; `warnings` names each gap
-- `NO_OP_UNSUPPORTED`: the format is unsupported or the file did not parse, so the
-  copy is byte-for-byte identical
-
-LSB decoding finds readable text that starts at the first sample. Encrypted,
-compressed, length-prefixed, or randomly spread payloads look like noise, so an
-empty result does not prove an image is clean.
+Check `sanitization_status` and `warnings` in the JSON result. `PARTIAL` means more
+changes are available through the other text channels. `NOT_SUPPORTED` and
+`VALIDATION_FAILED` include a reason and leave the original intact.
 
 ### Batch processing
 

@@ -11,8 +11,11 @@ import re
 import struct
 import zipfile
 from dataclasses import asdict, dataclass, field
+from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any, Mapping
+from xml.etree import ElementTree
+from xml.parsers import expat
 
 from stegguard.limits import (
     ResourceLimitError,
@@ -196,10 +199,44 @@ def _scan_pdf(raw: bytes) -> list[DetectionFinding]:
     ]
 
 
+def container_format(raw: bytes, suffix: str) -> str | None:
+    """Identify supported archive families and recognized unsupported containers."""
+    if raw.startswith(b"SQLite format 3\0"):
+        return ".sqlite"
+    if not raw.startswith((b"PK\x03\x04", b"PK\x05\x06")):
+        return None
+    try:
+        with zipfile.ZipFile(io.BytesIO(raw)) as archive:
+            names = set(archive.namelist())
+            for member, kind in (
+                ("word/document.xml", ".docx"),
+                ("ppt/presentation.xml", ".pptx"),
+                ("xl/workbook.xml", ".xlsx"),
+            ):
+                if "[Content_Types].xml" in names and member in names:
+                    return kind
+            if "mimetype" in names:
+                info = archive.getinfo("mimetype")
+                if info.file_size <= 64 and not info.flag_bits & 1:
+                    mimetype = archive.read(info)
+                    if mimetype == b"application/epub+zip":
+                        return ".epub"
+                    if mimetype == b"application/vnd.oasis.opendocument.text":
+                        return ".odt"
+    except (OSError, RuntimeError, NotImplementedError, zipfile.BadZipFile):
+        return ".zip"
+    return ".zip"
+
+
 def _scan_structural(source: Path, raw: bytes) -> list[DetectionFinding]:
     """Parse format boundaries and inventory hidden/private structures."""
     findings: list[DetectionFinding] = []
-    suffix = source.suffix.lower()
+    kind = container_format(raw, source.suffix.lower())
+    suffix = kind or source.suffix.lower()
+    if kind == ".sqlite":
+        return [_finding("STRUCTURAL", "unsupported_container",
+                         "SQLite database content inspection is unsupported.", 1.0,
+                         evidence={"format": "SQLite"})]
 
     if raw.startswith(b"\x89PNG\r\n\x1a\n"):
         position = 8
@@ -278,6 +315,7 @@ def _scan_structural(source: Path, raw: bytes) -> list[DetectionFinding]:
     if suffix in {".mp4", ".mov", ".m4v", ".3gp"} and len(raw) >= 8:
         position = 0
         private_boxes: list[str] = []
+        ordinary_padding: list[str] = []
         while position + 8 <= len(raw):
             size = struct.unpack_from(">I", raw, position)[0]
             box_type = raw[position + 4 : position + 8]
@@ -289,9 +327,21 @@ def _scan_structural(source: Path, raw: bytes) -> list[DetectionFinding]:
                 size = len(raw) - position
             if size < header_size or position + size > len(raw):
                 break
-            if box_type in {b"uuid", b"free", b"skip"}:
+            if box_type in {b"free", b"skip"} and not any(memoryview(raw)[position + header_size : position + size]):
+                ordinary_padding.append(box_type.decode("ascii"))
+            elif box_type in {b"uuid", b"free", b"skip"}:
                 private_boxes.append(box_type.decode("ascii"))
             position += size
+        if ordinary_padding:
+            findings.append(
+                _finding(
+                    "STRUCTURAL",
+                    "bmff_private_box",
+                    "ISO BMFF media contains empty or zero-filled padding boxes.",
+                    1.0,
+                    evidence={"box_types": ordinary_padding},
+                )
+            )
         if private_boxes:
             findings.append(
                 _finding(
@@ -332,8 +382,9 @@ def _scan_structural(source: Path, raw: bytes) -> list[DetectionFinding]:
 
 
 def _scan_format_metadata(source: Path, raw: bytes) -> list[DetectionFinding]:
-    suffix = source.suffix.lower()
+    suffix = container_format(raw, source.suffix.lower()) or source.suffix.lower()
     fields: set[str] = set()
+    findings = []
     lowered = raw.lower()
     if suffix in {".jpg", ".jpeg"}:
         if b"exif\x00\x00" in lowered:
@@ -359,6 +410,18 @@ def _scan_format_metadata(source: Path, raw: bytes) -> list[DetectionFinding]:
             with zipfile.ZipFile(io.BytesIO(raw)) as archive:
                 if archive.comment:
                     fields.add("archive_comment")
+                    try:
+                        comment = archive.comment.decode("utf-8")
+                    except UnicodeDecodeError:
+                        comment = ""
+                    if "\u200b" in comment:
+                        findings.append(_finding(
+                            "METADATA", "decoded_metadata_marker",
+                            "Decoded archive comment contains a zero-width space.", 1.0,
+                            location=f"text:1:{comment.index(chr(0x200B)) + 1}",
+                            evidence={"field": "archive_comment", "codepoint": "U+200B"},
+                            risk="medium",
+                        ))
                 if any(name.startswith("docProps/") for name in archive.namelist()):
                     fields.add("office_properties")
         except (OSError, zipfile.BadZipFile):
@@ -367,6 +430,7 @@ def _scan_format_metadata(source: Path, raw: bytes) -> list[DetectionFinding]:
     if not fields:
         return []
     return [
+        *findings,
         _finding(
             "METADATA",
             "format_metadata_fields",
@@ -377,7 +441,16 @@ def _scan_format_metadata(source: Path, raw: bytes) -> list[DetectionFinding]:
     ]
 
 
-def _scan_text(text: str) -> list[DetectionFinding]:
+class _InlineStyles(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__()
+        self.styles: list[str] = []
+
+    def handle_starttag(self, tag, attrs):
+        self.styles.extend(value for name, value in attrs if name == "style" and value)
+
+
+def _scan_text(text: str, source: Path) -> list[DetectionFinding]:
     findings: list[DetectionFinding] = []
     double_spaces = len(re.findall(r"(?<! ) {2}(?! )", text))
     punctuation_intervals = len(re.findall(r"[.!?](?:\s+\w+){1,4}\s{2}", text))
@@ -395,15 +468,23 @@ def _scan_text(text: str) -> list[DetectionFinding]:
             )
         )
 
+    parser = _InlineStyles()
+    if source.suffix.lower() in {".html", ".htm", ".svg", ".xhtml"}:
+        parser.feed(text)
+        parser.close()
     layout_patterns = {
         "display_none": r"display\s*:\s*none",
-        "zero_opacity": r"opacity\s*:\s*0(?:[;\"']|\s)",
-        "zero_font": r"font-size\s*:\s*0(?:px|pt|em|rem|%)?",
+        "zero_opacity": r"opacity\s*:\s*0(?:\.0+)?",
+        "zero_font": r"font-size\s*:\s*0(?:\.0+)?(?:px|pt|em|rem|%)?",
         "visibility_hidden": r"visibility\s*:\s*hidden",
         "off_canvas": r"(?:left|top)\s*:\s*-\d{3,}(?:px|pt)",
     }
+    declarations = {
+        declaration.strip() for style in parser.styles for declaration in style.split(";")
+    }
     matched_layout = [
-        name for name, pattern in layout_patterns.items() if re.search(pattern, text, re.I)
+        name for name, pattern in layout_patterns.items()
+        if any(re.fullmatch(pattern + r"(?:\s*!important)?", value, re.I) for value in declarations)
     ]
     if matched_layout:
         findings.append(
@@ -808,7 +889,7 @@ def _scan_content(
     except UnicodeDecodeError:
         text = ""
     if text:
-        findings.extend(_scan_text(text))
+        findings.extend(_scan_text(text, source))
     ai_text_watermark, ai_findings = _verify_ai_text(ai_text_verifier, text, source)
     findings.extend(ai_findings)
     return {
@@ -836,7 +917,7 @@ _NESTED_MEDIA_EXTENSIONS = {
     ".html",
     ".htm",
 }
-_ZIP_CONTAINER_EXTENSIONS = {".zip", ".docx", ".pptx", ".xlsx"}
+_ZIP_CONTAINER_EXTENSIONS = {".zip", ".docx", ".pptx", ".xlsx", ".epub", ".odt"}
 _MAX_NESTED_MEMBERS = 500
 _MAX_NESTED_MEMBER_BYTES = 10 * 1024 * 1024
 _MAX_NESTED_TOTAL_BYTES = 50 * 1024 * 1024
@@ -882,6 +963,68 @@ def _extract_media_signatures(raw: bytes) -> list[tuple[str, bytes]]:
     return extracted
 
 
+def _document_member_tags(suffix: str, name: str) -> set[str]:
+    if suffix == ".docx" and name == "word/document.xml":
+        return {"t"}
+    if suffix == ".pptx" and name.startswith(("ppt/slides/", "ppt/notesSlides/")) and name.endswith(".xml"):
+        return {"t"}
+    if suffix == ".xlsx" and (
+        name == "xl/sharedStrings.xml"
+        or (name.startswith("xl/worksheets/") and name.endswith(".xml"))
+    ):
+        return {"t", "v"}
+    if suffix == ".epub" and Path(name).suffix.lower() in {".xhtml", ".html", ".htm"}:
+        return {"body"}
+    if suffix == ".odt" and name == "content.xml":
+        return {"p", "h"}
+    return set()
+
+
+def _document_tree(raw: bytes) -> ElementTree.Element:
+    tree = ElementTree.TreeBuilder()
+    parser = expat.ParserCreate(namespace_separator="}")
+    parser.StartElementHandler = tree.start
+    parser.EndElementHandler = tree.end
+    parser.CharacterDataHandler = tree.data
+
+    def reject_entities(name, system_id, public_id, has_internal_subset):
+        if has_internal_subset:
+            raise ElementTree.ParseError("Document type declarations with entities are unsupported")
+
+    parser.StartDoctypeDeclHandler = reject_entities
+    try:
+        parser.Parse(raw, True)
+    except expat.ExpatError as exc:
+        raise ElementTree.ParseError(str(exc)) from exc
+    return tree.close()
+
+
+def _document_text_findings(
+    raw: bytes, tags: set[str], limit: int, deadline: float,
+) -> list[dict[str, Any]]:
+    from stegguard.detector import ZERO_WIDTH_CHARS
+
+    root = _document_tree(raw)
+    findings = []
+    for index, element in enumerate(
+        (element for element in root.iter() if element.tag.rsplit("}", 1)[-1] in tags), 1
+    ):
+        check_deadline(deadline)
+        for column, char in enumerate("".join(element.itertext()), 1):
+            if char not in ZERO_WIDTH_CHARS:
+                continue
+            findings.append(_finding(
+                "TEXT_PATTERN", "document_text_marker",
+                "Decoded document text contains an invisible character.", 1.0,
+                location=f"text:{index}:{column}",
+                evidence={"codepoint": f"U+{ord(char):04X}"},
+                risk="medium",
+            ).to_dict())
+            if len(findings) > limit:
+                return findings
+    return findings
+
+
 def _scan_nested(
     source: Path,
     raw: bytes,
@@ -896,7 +1039,7 @@ def _scan_nested(
     nested: list[dict[str, Any]] = []
     errors: list[str] = []
     candidates: list[tuple[str, bytes]] = []
-    suffix = source.suffix.lower()
+    suffix = container_format(raw, source.suffix.lower()) or source.suffix.lower()
     if depth >= limits.max_nesting_depth:
         return [], ["Nested depth limit reached."]
     check_deadline(deadline)
@@ -911,7 +1054,10 @@ def _scan_nested(
                         errors.append("Nested member limit reached.")
                         break
                     member_suffix = Path(member.filename).suffix.lower()
-                    if member.is_dir() or member_suffix not in _NESTED_MEDIA_EXTENSIONS:
+                    if member.is_dir() or (
+                        member_suffix not in _NESTED_MEDIA_EXTENSIONS
+                        and not _document_member_tags(suffix, member.filename)
+                    ):
                         continue
                     member_limit = min(
                         _MAX_NESTED_MEMBER_BYTES,
@@ -968,6 +1114,14 @@ def _scan_nested(
             remote_manifest_loader,
             media_analyzers,
         )
+        tags = _document_member_tags(suffix, member_name)
+        if tags:
+            try:
+                member_result["findings"].extend(
+                    _document_text_findings(content, tags, limits.max_findings, deadline)
+                )
+            except ElementTree.ParseError as exc:
+                member_result.setdefault("scan_errors", []).append(f"Document text: {exc}")
         if len(member_result["findings"]) > limits.max_findings:
             member_result["findings"] = member_result["findings"][: limits.max_findings]
             member_result.setdefault("scan_errors", []).append("Finding limit reached.")

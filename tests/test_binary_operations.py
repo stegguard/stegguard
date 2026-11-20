@@ -482,7 +482,7 @@ def test_decode_reports_status_not_supported_for_an_unparsed_binary(tmp_path):
     result = decode_file(source)
 
     assert result["status"] == "NOT_SUPPORTED"
-    assert result["errors"] == ["This binary format is not supported or the file did not parse."]
+    assert result["errors"] == ["Format has no decoder."]
 
 
 # ── LSB sanitization ──────────────────────────────────────────────────────────

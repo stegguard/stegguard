@@ -64,7 +64,7 @@ include = ["stegguard*"]
 version = {attr = "stegguard._version.__version__"}
 
 [tool.setuptools.package-data]
-stegguard = ["schemas/*.json"]
+stegguard = ["schemas/*.json", "data/*.txt"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

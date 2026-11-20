@@ -1,0 +1,638 @@
+{
+  "cases": [
+    {
+      "expected": false,
+      "family": "TEXT",
+      "format": ".txt",
+      "id": "text-plain",
+      "observed": false
+    },
+    {
+      "expected": true,
+      "family": "TEXT",
+      "format": ".txt",
+      "id": "text-zero-width",
+      "observed": true
+    },
+    {
+      "expected": false,
+      "family": "BINARY",
+      "format": ".wasm",
+      "id": "binary-wasm-plain",
+      "observed": false
+    },
+    {
+      "expected": true,
+      "family": "BINARY",
+      "format": ".wasm",
+      "id": "binary-wasm-invisible-unicode",
+      "observed": true
+    },
+    {
+      "expected": false,
+      "family": "LAYOUT",
+      "format": ".svg",
+      "id": "layout-svg-visible",
+      "observed": false
+    },
+    {
+      "expected": true,
+      "family": "LAYOUT",
+      "format": ".svg",
+      "id": "layout-svg-hidden",
+      "observed": true
+    },
+    {
+      "expected": false,
+      "family": "METADATA",
+      "format": ".png",
+      "id": "metadata-png-empty",
+      "observed": false
+    },
+    {
+      "expected": true,
+      "family": "METADATA",
+      "format": ".png",
+      "id": "metadata-png-text",
+      "observed": true
+    },
+    {
+      "expected": false,
+      "family": "STRUCTURAL",
+      "format": ".png",
+      "id": "structural-png-standard",
+      "observed": false
+    },
+    {
+      "expected": true,
+      "family": "STRUCTURAL",
+      "format": ".png",
+      "id": "structural-png-private",
+      "observed": true
+    },
+    {
+      "expected": false,
+      "family": "TEXT_PATTERN",
+      "format": ".docx",
+      "id": "docx-plain",
+      "observed": false
+    },
+    {
+      "expected": true,
+      "family": "TEXT_PATTERN",
+      "format": ".docx",
+      "id": "docx-marked",
+      "observed": true
+    },
+    {
+      "expected": false,
+      "family": "TEXT_PATTERN",
+      "format": ".pptx",
+      "id": "pptx-plain",
+      "observed": false
+    },
+    {
+      "expected": true,
+      "family": "TEXT_PATTERN",
+      "format": ".pptx",
+      "id": "pptx-marked",
+      "observed": true
+    },
+    {
+      "expected": false,
+      "family": "TEXT_PATTERN",
+      "format": ".xlsx",
+      "id": "xlsx-plain",
+      "observed": false
+    },
+    {
+      "expected": true,
+      "family": "TEXT_PATTERN",
+      "format": ".xlsx",
+      "id": "xlsx-marked",
+      "observed": true
+    },
+    {
+      "expected": false,
+      "family": "TEXT_PATTERN",
+      "format": ".epub",
+      "id": "epub-plain",
+      "observed": false
+    },
+    {
+      "expected": true,
+      "family": "TEXT_PATTERN",
+      "format": ".epub",
+      "id": "epub-marked",
+      "observed": true
+    },
+    {
+      "expected": false,
+      "family": "TEXT_PATTERN",
+      "format": ".odt",
+      "id": "odt-plain",
+      "observed": false
+    },
+    {
+      "expected": true,
+      "family": "TEXT_PATTERN",
+      "format": ".odt",
+      "id": "odt-marked",
+      "observed": true
+    },
+    {
+      "expected": false,
+      "family": "TEXT",
+      "format": ".txt",
+      "id": "bom-utf16-plain",
+      "observed": false
+    },
+    {
+      "expected": true,
+      "family": "TEXT",
+      "format": ".txt",
+      "id": "bom-utf16-marker",
+      "observed": true
+    },
+    {
+      "expected": false,
+      "family": "TEXT",
+      "format": ".txt",
+      "id": "unicode-greek",
+      "observed": false
+    },
+    {
+      "expected": true,
+      "family": "TEXT",
+      "format": ".txt",
+      "id": "unicode-confusable",
+      "observed": true
+    },
+    {
+      "expected": false,
+      "family": "TEXT",
+      "format": ".txt",
+      "id": "unicode-emoji",
+      "observed": false
+    },
+    {
+      "expected": true,
+      "family": "TEXT",
+      "format": ".txt",
+      "id": "unicode-joiner",
+      "observed": true
+    },
+    {
+      "expected": false,
+      "family": "LAYOUT",
+      "format": ".md",
+      "id": "layout-markdown",
+      "observed": false
+    },
+    {
+      "expected": false,
+      "family": "LAYOUT",
+      "format": ".html",
+      "id": "layout-rem",
+      "observed": false
+    },
+    {
+      "expected": true,
+      "family": "LAYOUT",
+      "format": ".html",
+      "id": "layout-hidden",
+      "observed": true
+    },
+    {
+      "expected": false,
+      "family": "STRUCTURAL",
+      "format": ".mp4",
+      "id": "mp4-empty",
+      "observed": false
+    },
+    {
+      "expected": false,
+      "family": "STRUCTURAL",
+      "format": ".mp4",
+      "id": "mp4-zero",
+      "observed": false
+    },
+    {
+      "expected": true,
+      "family": "STRUCTURAL",
+      "format": ".mp4",
+      "id": "mp4-nonzero",
+      "observed": true
+    },
+    {
+      "expected": false,
+      "family": "BINARY",
+      "format": ".mp4",
+      "id": "mp4-incidental",
+      "observed": false
+    },
+    {
+      "expected": false,
+      "family": "BINARY",
+      "format": ".pdf",
+      "id": "pdf-incidental",
+      "observed": false
+    },
+    {
+      "expected": false,
+      "family": "METADATA",
+      "format": ".zip",
+      "id": "zip-plain",
+      "observed": false
+    },
+    {
+      "expected": true,
+      "family": "METADATA",
+      "format": ".zip",
+      "id": "zip-comment-marker",
+      "observed": true
+    },
+    {
+      "expected": false,
+      "family": "AUDIO_ROBUST",
+      "format": ".wav",
+      "id": "wav-tone",
+      "observed": false
+    },
+    {
+      "expected": true,
+      "family": "AUDIO_ROBUST",
+      "format": ".wav",
+      "id": "wav-echo",
+      "observed": true
+    }
+  ],
+  "corpus_version": "2.0",
+  "families": {
+    "AUDIO_ROBUST": {
+      "false_negative_rate": 0.0,
+      "false_negatives": 0,
+      "false_positive_rate": 0.0,
+      "false_positives": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "samples": 2,
+      "true_negatives": 1,
+      "true_positives": 1
+    },
+    "BINARY": {
+      "false_negative_rate": 0.0,
+      "false_negatives": 0,
+      "false_positive_rate": 0.0,
+      "false_positives": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "samples": 4,
+      "true_negatives": 3,
+      "true_positives": 1
+    },
+    "LAYOUT": {
+      "false_negative_rate": 0.0,
+      "false_negatives": 0,
+      "false_positive_rate": 0.0,
+      "false_positives": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "samples": 5,
+      "true_negatives": 3,
+      "true_positives": 2
+    },
+    "METADATA": {
+      "false_negative_rate": 0.0,
+      "false_negatives": 0,
+      "false_positive_rate": 0.0,
+      "false_positives": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "samples": 4,
+      "true_negatives": 2,
+      "true_positives": 2
+    },
+    "STRUCTURAL": {
+      "false_negative_rate": 0.0,
+      "false_negatives": 0,
+      "false_positive_rate": 0.0,
+      "false_positives": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "samples": 5,
+      "true_negatives": 3,
+      "true_positives": 2
+    },
+    "TEXT": {
+      "false_negative_rate": 0.0,
+      "false_negatives": 0,
+      "false_positive_rate": 0.0,
+      "false_positives": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "samples": 8,
+      "true_negatives": 4,
+      "true_positives": 4
+    },
+    "TEXT_PATTERN": {
+      "false_negative_rate": 0.0,
+      "false_negatives": 0,
+      "false_positive_rate": 0.0,
+      "false_positives": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "samples": 10,
+      "true_negatives": 5,
+      "true_positives": 5
+    }
+  },
+  "final_verdicts": {
+    "families": {
+      "AUDIO_ROBUST": {
+        "false_negative_rate": 0.0,
+        "false_negatives": 0,
+        "false_positive_rate": 0.0,
+        "false_positives": 0,
+        "precision": 1.0,
+        "recall": 1.0,
+        "samples": 2,
+        "true_negatives": 1,
+        "true_positives": 1
+      },
+      "BINARY": {
+        "false_negative_rate": 0.0,
+        "false_negatives": 0,
+        "false_positive_rate": 0.0,
+        "false_positives": 0,
+        "precision": 1.0,
+        "recall": 1.0,
+        "samples": 4,
+        "true_negatives": 3,
+        "true_positives": 1
+      },
+      "LAYOUT": {
+        "false_negative_rate": 0.0,
+        "false_negatives": 0,
+        "false_positive_rate": 0.0,
+        "false_positives": 0,
+        "precision": 1.0,
+        "recall": 1.0,
+        "samples": 5,
+        "true_negatives": 3,
+        "true_positives": 2
+      },
+      "METADATA": {
+        "false_negative_rate": 0.0,
+        "false_negatives": 0,
+        "false_positive_rate": 0.0,
+        "false_positives": 0,
+        "precision": 1.0,
+        "recall": 1.0,
+        "samples": 4,
+        "true_negatives": 3,
+        "true_positives": 1
+      },
+      "STRUCTURAL": {
+        "false_negative_rate": 0.0,
+        "false_negatives": 0,
+        "false_positive_rate": 0.0,
+        "false_positives": 0,
+        "precision": 1.0,
+        "recall": 1.0,
+        "samples": 5,
+        "true_negatives": 3,
+        "true_positives": 2
+      },
+      "TEXT": {
+        "false_negative_rate": 0.0,
+        "false_negatives": 0,
+        "false_positive_rate": 0.0,
+        "false_positives": 0,
+        "precision": 1.0,
+        "recall": 1.0,
+        "samples": 8,
+        "true_negatives": 4,
+        "true_positives": 4
+      },
+      "TEXT_PATTERN": {
+        "false_negative_rate": 0.0,
+        "false_negatives": 0,
+        "false_positive_rate": 0.0,
+        "false_positives": 0,
+        "precision": 1.0,
+        "recall": 1.0,
+        "samples": 10,
+        "true_negatives": 5,
+        "true_positives": 5
+      }
+    },
+    "formats": {
+      ".docx": {
+        "false_negative_rate": 0.0,
+        "false_negatives": 0,
+        "false_positive_rate": 0.0,
+        "false_positives": 0,
+        "precision": 1.0,
+        "recall": 1.0,
+        "samples": 2,
+        "true_negatives": 1,
+        "true_positives": 1
+      },
+      ".epub": {
+        "false_negative_rate": 0.0,
+        "false_negatives": 0,
+        "false_positive_rate": 0.0,
+        "false_positives": 0,
+        "precision": 1.0,
+        "recall": 1.0,
+        "samples": 2,
+        "true_negatives": 1,
+        "true_positives": 1
+      },
+      ".html": {
+        "false_negative_rate": 0.0,
+        "false_negatives": 0,
+        "false_positive_rate": 0.0,
+        "false_positives": 0,
+        "precision": 1.0,
+        "recall": 1.0,
+        "samples": 2,
+        "true_negatives": 1,
+        "true_positives": 1
+      },
+      ".md": {
+        "false_negative_rate": null,
+        "false_negatives": 0,
+        "false_positive_rate": 0.0,
+        "false_positives": 0,
+        "precision": null,
+        "recall": null,
+        "samples": 1,
+        "true_negatives": 1,
+        "true_positives": 0
+      },
+      ".mp4": {
+        "false_negative_rate": 0.0,
+        "false_negatives": 0,
+        "false_positive_rate": 0.0,
+        "false_positives": 0,
+        "precision": 1.0,
+        "recall": 1.0,
+        "samples": 4,
+        "true_negatives": 3,
+        "true_positives": 1
+      },
+      ".odt": {
+        "false_negative_rate": 0.0,
+        "false_negatives": 0,
+        "false_positive_rate": 0.0,
+        "false_positives": 0,
+        "precision": 1.0,
+        "recall": 1.0,
+        "samples": 2,
+        "true_negatives": 1,
+        "true_positives": 1
+      },
+      ".pdf": {
+        "false_negative_rate": null,
+        "false_negatives": 0,
+        "false_positive_rate": 0.0,
+        "false_positives": 0,
+        "precision": null,
+        "recall": null,
+        "samples": 1,
+        "true_negatives": 1,
+        "true_positives": 0
+      },
+      ".png": {
+        "false_negative_rate": 0.0,
+        "false_negatives": 0,
+        "false_positive_rate": 0.0,
+        "false_positives": 0,
+        "precision": 1.0,
+        "recall": 1.0,
+        "samples": 4,
+        "true_negatives": 3,
+        "true_positives": 1
+      },
+      ".pptx": {
+        "false_negative_rate": 0.0,
+        "false_negatives": 0,
+        "false_positive_rate": 0.0,
+        "false_positives": 0,
+        "precision": 1.0,
+        "recall": 1.0,
+        "samples": 2,
+        "true_negatives": 1,
+        "true_positives": 1
+      },
+      ".svg": {
+        "false_negative_rate": 0.0,
+        "false_negatives": 0,
+        "false_positive_rate": 0.0,
+        "false_positives": 0,
+        "precision": 1.0,
+        "recall": 1.0,
+        "samples": 2,
+        "true_negatives": 1,
+        "true_positives": 1
+      },
+      ".txt": {
+        "false_negative_rate": 0.0,
+        "false_negatives": 0,
+        "false_positive_rate": 0.0,
+        "false_positives": 0,
+        "precision": 1.0,
+        "recall": 1.0,
+        "samples": 8,
+        "true_negatives": 4,
+        "true_positives": 4
+      },
+      ".wasm": {
+        "false_negative_rate": 0.0,
+        "false_negatives": 0,
+        "false_positive_rate": 0.0,
+        "false_positives": 0,
+        "precision": 1.0,
+        "recall": 1.0,
+        "samples": 2,
+        "true_negatives": 1,
+        "true_positives": 1
+      },
+      ".wav": {
+        "false_negative_rate": 0.0,
+        "false_negatives": 0,
+        "false_positive_rate": 0.0,
+        "false_positives": 0,
+        "precision": 1.0,
+        "recall": 1.0,
+        "samples": 2,
+        "true_negatives": 1,
+        "true_positives": 1
+      },
+      ".xlsx": {
+        "false_negative_rate": 0.0,
+        "false_negatives": 0,
+        "false_positive_rate": 0.0,
+        "false_positives": 0,
+        "precision": 1.0,
+        "recall": 1.0,
+        "samples": 2,
+        "true_negatives": 1,
+        "true_positives": 1
+      },
+      ".zip": {
+        "false_negative_rate": 0.0,
+        "false_negatives": 0,
+        "false_positive_rate": 0.0,
+        "false_positives": 0,
+        "precision": 1.0,
+        "recall": 1.0,
+        "samples": 2,
+        "true_negatives": 1,
+        "true_positives": 1
+      }
+    },
+    "incomplete_files": 0,
+    "overall": {
+      "false_negative_rate": 0.0,
+      "false_negatives": 0,
+      "false_positive_rate": 0.0,
+      "false_positives": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "samples": 38,
+      "true_negatives": 22,
+      "true_positives": 16
+    }
+  },
+  "formats": [
+    ".docx",
+    ".epub",
+    ".html",
+    ".md",
+    ".mp4",
+    ".odt",
+    ".pdf",
+    ".png",
+    ".pptx",
+    ".svg",
+    ".txt",
+    ".wasm",
+    ".wav",
+    ".xlsx",
+    ".zip"
+  ],
+  "overall": {
+    "false_negative_rate": 0.0,
+    "false_negatives": 0,
+    "false_positive_rate": 0.0,
+    "false_positives": 0,
+    "precision": 1.0,
+    "recall": 1.0,
+    "samples": 38,
+    "true_negatives": 21,
+    "true_positives": 17
+  }
+}

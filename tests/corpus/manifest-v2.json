@@ -1,0 +1,420 @@
+{
+  "corpus_version": "2.0",
+  "description": "Harmless synthetic detector and final-verdict cases.",
+  "cases": [
+    {
+      "id": "text-plain",
+      "family": "TEXT",
+      "filename": "plain.txt",
+      "encoding": "utf-8",
+      "content": "A plain sentence with ordinary spacing.\n",
+      "expected_detected": false,
+      "origin": "StegGuard synthetic fixture",
+      "license": "Apache-2.0"
+    },
+    {
+      "id": "text-zero-width",
+      "family": "TEXT",
+      "filename": "zero-width.txt",
+      "encoding": "utf-8",
+      "content": "visible\u200bhidden\n",
+      "expected_detected": true,
+      "origin": "StegGuard synthetic fixture",
+      "license": "Apache-2.0"
+    },
+    {
+      "id": "binary-wasm-plain",
+      "family": "BINARY",
+      "filename": "plain.wasm",
+      "encoding": "hex",
+      "content": "0061736d01000000",
+      "expected_detected": false,
+      "origin": "Minimal WebAssembly header generated for StegGuard",
+      "license": "Apache-2.0"
+    },
+    {
+      "id": "binary-wasm-invisible-unicode",
+      "family": "BINARY",
+      "filename": "unicode.wasm",
+      "encoding": "hex",
+      "content": "0061736d01000000e2808b",
+      "expected_detected": true,
+      "origin": "StegGuard synthetic fixture",
+      "license": "Apache-2.0"
+    },
+    {
+      "id": "layout-svg-visible",
+      "family": "LAYOUT",
+      "filename": "visible.svg",
+      "encoding": "utf-8",
+      "content": "<svg xmlns=\"http://www.w3.org/2000/svg\"><text>visible</text></svg>",
+      "expected_detected": false,
+      "origin": "StegGuard synthetic fixture",
+      "license": "Apache-2.0"
+    },
+    {
+      "id": "layout-svg-hidden",
+      "family": "LAYOUT",
+      "filename": "hidden.svg",
+      "encoding": "utf-8",
+      "content": "<svg xmlns=\"http://www.w3.org/2000/svg\"><text style=\"display:none\">hidden</text></svg>",
+      "expected_detected": true,
+      "origin": "StegGuard synthetic fixture",
+      "license": "Apache-2.0"
+    },
+    {
+      "id": "metadata-png-empty",
+      "family": "METADATA",
+      "filename": "empty.png",
+      "encoding": "hex",
+      "content": "89504e470d0a1a0a0000000d4948445200000001000000010802000000907753de0000000c49444154789c63606060000000040001f61738550000000049454e44ae426082",
+      "expected_detected": false,
+      "origin": "StegGuard synthetic parser fixture",
+      "license": "Apache-2.0"
+    },
+    {
+      "id": "metadata-png-text",
+      "family": "METADATA",
+      "filename": "metadata.png",
+      "encoding": "hex",
+      "content": "89504e470d0a1a0a0000000d4948445200000001000000010802000000907753de0000000b74455874436f6d6d656e74006162634eef5b1e0000000c49444154789c63606060000000040001f61738550000000049454e44ae426082",
+      "expected_detected": true,
+      "origin": "StegGuard synthetic parser fixture",
+      "license": "Apache-2.0",
+      "expected_flagged": false
+    },
+    {
+      "id": "structural-png-standard",
+      "family": "STRUCTURAL",
+      "filename": "standard.png",
+      "encoding": "hex",
+      "content": "89504e470d0a1a0a0000000d4948445200000001000000010802000000907753de0000000c49444154789c63606060000000040001f61738550000000049454e44ae426082",
+      "expected_detected": false,
+      "origin": "StegGuard synthetic parser fixture",
+      "license": "Apache-2.0"
+    },
+    {
+      "id": "structural-png-private",
+      "family": "STRUCTURAL",
+      "filename": "private.png",
+      "encoding": "hex",
+      "content": "89504e470d0a1a0a0000000d4948445200000001000000010802000000907753de000000017670416778deb5a1770000000c49444154789c63606060000000040001f61738550000000049454e44ae426082",
+      "expected_detected": true,
+      "origin": "StegGuard synthetic parser fixture",
+      "license": "Apache-2.0"
+    },
+    {
+      "id": "docx-plain",
+      "family": "TEXT_PATTERN",
+      "filename": "plain.docx",
+      "encoding": "zip",
+      "expected_detected": false,
+      "origin": "StegGuard synthetic fixture",
+      "license": "Apache-2.0",
+      "members": {
+        "[Content_Types].xml": "<Types/>",
+        "word/document.xml": "<document><t>sample</t></document>"
+      }
+    },
+    {
+      "id": "docx-marked",
+      "family": "TEXT_PATTERN",
+      "filename": "marked.docx",
+      "encoding": "zip",
+      "expected_detected": true,
+      "origin": "StegGuard synthetic fixture",
+      "license": "Apache-2.0",
+      "members": {
+        "[Content_Types].xml": "<Types/>",
+        "word/document.xml": "<document><t>sample\u200b</t></document>"
+      }
+    },
+    {
+      "id": "pptx-plain",
+      "family": "TEXT_PATTERN",
+      "filename": "plain.pptx",
+      "encoding": "zip",
+      "expected_detected": false,
+      "origin": "StegGuard synthetic fixture",
+      "license": "Apache-2.0",
+      "members": {
+        "[Content_Types].xml": "<Types/>",
+        "ppt/presentation.xml": "<presentation/>",
+        "ppt/notesSlides/notesSlide1.xml": "<notes><t>sample</t></notes>"
+      }
+    },
+    {
+      "id": "pptx-marked",
+      "family": "TEXT_PATTERN",
+      "filename": "marked.pptx",
+      "encoding": "zip",
+      "expected_detected": true,
+      "origin": "StegGuard synthetic fixture",
+      "license": "Apache-2.0",
+      "members": {
+        "[Content_Types].xml": "<Types/>",
+        "ppt/presentation.xml": "<presentation/>",
+        "ppt/notesSlides/notesSlide1.xml": "<notes><t>sample\u200b</t></notes>"
+      }
+    },
+    {
+      "id": "xlsx-plain",
+      "family": "TEXT_PATTERN",
+      "filename": "plain.xlsx",
+      "encoding": "zip",
+      "expected_detected": false,
+      "origin": "StegGuard synthetic fixture",
+      "license": "Apache-2.0",
+      "members": {
+        "[Content_Types].xml": "<Types/>",
+        "xl/workbook.xml": "<workbook/>",
+        "xl/sharedStrings.xml": "<sst><t>sample</t></sst>"
+      }
+    },
+    {
+      "id": "xlsx-marked",
+      "family": "TEXT_PATTERN",
+      "filename": "marked.xlsx",
+      "encoding": "zip",
+      "expected_detected": true,
+      "origin": "StegGuard synthetic fixture",
+      "license": "Apache-2.0",
+      "members": {
+        "[Content_Types].xml": "<Types/>",
+        "xl/workbook.xml": "<workbook/>",
+        "xl/sharedStrings.xml": "<sst><t>sample\u200b</t></sst>"
+      }
+    },
+    {
+      "id": "epub-plain",
+      "family": "TEXT_PATTERN",
+      "filename": "plain.epub",
+      "encoding": "zip",
+      "expected_detected": false,
+      "origin": "StegGuard synthetic fixture",
+      "license": "Apache-2.0",
+      "members": {
+        "mimetype": "application/epub+zip",
+        "OEBPS/chapter.xhtml": "<html><body><p>sample</p></body></html>"
+      }
+    },
+    {
+      "id": "epub-marked",
+      "family": "TEXT_PATTERN",
+      "filename": "marked.epub",
+      "encoding": "zip",
+      "expected_detected": true,
+      "origin": "StegGuard synthetic fixture",
+      "license": "Apache-2.0",
+      "members": {
+        "mimetype": "application/epub+zip",
+        "OEBPS/chapter.xhtml": "<html><body><p>sample\u200b</p></body></html>"
+      }
+    },
+    {
+      "id": "odt-plain",
+      "family": "TEXT_PATTERN",
+      "filename": "plain.odt",
+      "encoding": "zip",
+      "expected_detected": false,
+      "origin": "StegGuard synthetic fixture",
+      "license": "Apache-2.0",
+      "members": {
+        "mimetype": "application/vnd.oasis.opendocument.text",
+        "content.xml": "<document><p>sample</p></document>"
+      }
+    },
+    {
+      "id": "odt-marked",
+      "family": "TEXT_PATTERN",
+      "filename": "marked.odt",
+      "encoding": "zip",
+      "expected_detected": true,
+      "origin": "StegGuard synthetic fixture",
+      "license": "Apache-2.0",
+      "members": {
+        "mimetype": "application/vnd.oasis.opendocument.text",
+        "content.xml": "<document><p>sample\u200b</p></document>"
+      }
+    },
+    {
+      "id": "bom-utf16-plain",
+      "family": "TEXT",
+      "filename": "plain-utf16.txt",
+      "encoding": "hex",
+      "expected_detected": false,
+      "origin": "StegGuard synthetic fixture",
+      "license": "Apache-2.0",
+      "content": "fffe70006c00610069006e00"
+    },
+    {
+      "id": "bom-utf16-marker",
+      "family": "TEXT",
+      "filename": "marked-utf16.txt",
+      "encoding": "hex",
+      "expected_detected": true,
+      "origin": "StegGuard synthetic fixture",
+      "license": "Apache-2.0",
+      "content": "fffe6d00610072006b000b20"
+    },
+    {
+      "id": "unicode-greek",
+      "family": "TEXT",
+      "filename": "greek.txt",
+      "encoding": "utf-8",
+      "expected_detected": false,
+      "origin": "StegGuard synthetic fixture",
+      "license": "Apache-2.0",
+      "content": "\u039a\u03b1\u03bb\u03b7\u03bc\u03ad\u03c1\u03b1 \u03ba\u03cc\u03c3\u03bc\u03b5!"
+    },
+    {
+      "id": "unicode-confusable",
+      "family": "TEXT",
+      "filename": "mixed.txt",
+      "encoding": "utf-8",
+      "expected_detected": true,
+      "origin": "StegGuard synthetic fixture",
+      "license": "Apache-2.0",
+      "content": "p\u0430ypal"
+    },
+    {
+      "id": "unicode-emoji",
+      "family": "TEXT",
+      "filename": "emoji.txt",
+      "encoding": "utf-8",
+      "expected_detected": false,
+      "origin": "StegGuard synthetic fixture",
+      "license": "Apache-2.0",
+      "content": "\ud83d\udc69\u200d\ud83d\udcbb"
+    },
+    {
+      "id": "unicode-joiner",
+      "family": "TEXT",
+      "filename": "joiner.txt",
+      "encoding": "utf-8",
+      "expected_detected": true,
+      "origin": "StegGuard synthetic fixture",
+      "license": "Apache-2.0",
+      "content": "a\u200db"
+    },
+    {
+      "id": "layout-markdown",
+      "family": "LAYOUT",
+      "filename": "visible.md",
+      "encoding": "utf-8",
+      "expected_detected": false,
+      "origin": "StegGuard synthetic fixture",
+      "license": "Apache-2.0",
+      "content": "The display: none declaration hides content."
+    },
+    {
+      "id": "layout-rem",
+      "family": "LAYOUT",
+      "filename": "visible.html",
+      "encoding": "utf-8",
+      "expected_detected": false,
+      "origin": "StegGuard synthetic fixture",
+      "license": "Apache-2.0",
+      "content": "<p style=\"font-size:0.875rem\">Visible</p>"
+    },
+    {
+      "id": "layout-hidden",
+      "family": "LAYOUT",
+      "filename": "hidden.html",
+      "encoding": "utf-8",
+      "expected_detected": true,
+      "origin": "StegGuard synthetic fixture",
+      "license": "Apache-2.0",
+      "content": "<p style=\"display:none\">Hidden</p>"
+    },
+    {
+      "id": "mp4-empty",
+      "family": "STRUCTURAL",
+      "filename": "empty.mp4",
+      "encoding": "hex",
+      "expected_detected": false,
+      "origin": "StegGuard synthetic fixture",
+      "license": "Apache-2.0",
+      "content": "0000000866726565"
+    },
+    {
+      "id": "mp4-zero",
+      "family": "STRUCTURAL",
+      "filename": "zero.mp4",
+      "encoding": "hex",
+      "expected_detected": false,
+      "origin": "StegGuard synthetic fixture",
+      "license": "Apache-2.0",
+      "content": "0000000c6672656500000000"
+    },
+    {
+      "id": "mp4-nonzero",
+      "family": "STRUCTURAL",
+      "filename": "nonzero.mp4",
+      "encoding": "hex",
+      "expected_detected": true,
+      "origin": "StegGuard synthetic fixture",
+      "license": "Apache-2.0",
+      "content": "0000000c6672656564617461"
+    },
+    {
+      "id": "mp4-incidental",
+      "family": "BINARY",
+      "filename": "incidental.mp4",
+      "encoding": "hex",
+      "expected_detected": false,
+      "origin": "StegGuard synthetic fixture",
+      "license": "Apache-2.0",
+      "content": "0000000b6d646174e2808b"
+    },
+    {
+      "id": "pdf-incidental",
+      "family": "BINARY",
+      "filename": "incidental.pdf",
+      "encoding": "hex",
+      "expected_detected": false,
+      "origin": "StegGuard synthetic fixture",
+      "license": "Apache-2.0",
+      "content": "255044462d312e340a73747265616d0ae2808b0a656e6473747265616d0a2525454f46"
+    },
+    {
+      "id": "zip-plain",
+      "family": "METADATA",
+      "filename": "plain.zip",
+      "encoding": "zip",
+      "expected_detected": false,
+      "origin": "StegGuard synthetic fixture",
+      "license": "Apache-2.0"
+    },
+    {
+      "id": "zip-comment-marker",
+      "family": "METADATA",
+      "filename": "comment.zip",
+      "encoding": "zip",
+      "expected_detected": true,
+      "origin": "StegGuard synthetic fixture",
+      "license": "Apache-2.0",
+      "comment": "text\u200b"
+    },
+    {
+      "id": "wav-tone",
+      "family": "AUDIO_ROBUST",
+      "filename": "tone.wav",
+      "encoding": "wav",
+      "expected_detected": false,
+      "origin": "StegGuard synthetic fixture",
+      "license": "Apache-2.0",
+      "content": "tone"
+    },
+    {
+      "id": "wav-echo",
+      "family": "AUDIO_ROBUST",
+      "filename": "echo.wav",
+      "encoding": "wav",
+      "expected_detected": true,
+      "origin": "StegGuard synthetic fixture",
+      "license": "Apache-2.0",
+      "content": "echo"
+    }
+  ]
+}

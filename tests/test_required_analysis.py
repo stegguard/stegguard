@@ -83,7 +83,7 @@ def _raising_analyzer(_source, _raw):
 
 def test_malformed_png_exits_two_and_explains_why_in_every_report(tmp_path):
     source = tmp_path / "bad.png"
-    source.write_bytes(b"not a png")
+    source.write_bytes(b"\x89PNG\r\n\x1a\n")
     json_path = tmp_path / "report.json"
     html_path = tmp_path / "report.html"
 
@@ -106,7 +106,7 @@ def test_malformed_png_exits_two_and_explains_why_in_every_report(tmp_path):
 
 def test_malformed_png_is_not_described_as_clean_in_terminal_output(tmp_path):
     source = tmp_path / "bad.png"
-    source.write_bytes(b"not a png")
+    source.write_bytes(b"\x89PNG\r\n\x1a\n")
 
     completed = _detect(str(source))
 
@@ -304,7 +304,7 @@ def test_json_report_records_the_sha256_of_a_readable_file(tmp_path):
 def test_per_folder_mode_reports_incomplete_folders_and_exits_two(tmp_path):
     root = tmp_path / "scan"
     (root / "broken").mkdir(parents=True)
-    (root / "broken" / "bad.png").write_bytes(b"not a png")
+    (root / "broken" / "bad.png").write_bytes(b"\x89PNG\r\n\x1a\n")
     out_dir = tmp_path / "reports"
     json_path = tmp_path / "report.json"
     combined = tmp_path / "combined.html"
@@ -408,7 +408,7 @@ def test_watermark_command_exits_zero_on_a_completed_scan_with_findings(tmp_path
 
 def test_watermark_command_html_report_exits_two_when_image_analysis_fails(tmp_path, capsys):
     source = tmp_path / "bad.png"
-    source.write_bytes(b"not a png")
+    source.write_bytes(b"\x89PNG\r\n\x1a\n")
     report = tmp_path / "report.html"
 
     assert cli_main(["watermark", str(source), "--html", str(report)]) == 2

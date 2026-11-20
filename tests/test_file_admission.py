@@ -74,7 +74,7 @@ def test_failed_staged_validation_preserves_original(tmp_path, monkeypatch):
 
 def test_unsupported_channel_reports_reason(tmp_path):
     source = tmp_path / "notes.txt"
-    source.write_text("hello")
+    source.write_text("hello", encoding="utf-8")
     result = sanitize_file(source, channels=["metadata"])
     assert result["sanitization_status"] == "NOT_SUPPORTED"
     assert "metadata" in result["errors"][0]
@@ -91,7 +91,7 @@ def test_unknown_binary_is_reported_as_unsupported(tmp_path):
     assert exported["unsupported_reason"]
     report = tmp_path / "report.html"
     generate_html_report([result], report)
-    assert exported["unsupported_reason"] in report.read_text()
+    assert exported["unsupported_reason"] in report.read_text(encoding="utf-8")
 
 
 def test_batch_reports_skips_and_unsupported_inputs(tmp_path):
@@ -102,9 +102,9 @@ def test_batch_reports_skips_and_unsupported_inputs(tmp_path):
     clean = tmp_path / "clean.txt"
     marked = tmp_path / "marked.txt"
     code = tmp_path / "script.py"
-    clean.write_text("hello\n")
-    marked.write_text("hello\u200b\n")
-    code.write_text("print('hello')\n")
+    clean.write_text("hello\n", encoding="utf-8")
+    marked.write_text("hello\u200b\n", encoding="utf-8")
+    code.write_text("print('hello')\n", encoding="utf-8")
     findings = tmp_path / "findings.json"
     findings.write_text(
         json.dumps(
@@ -115,7 +115,8 @@ def test_batch_reports_skips_and_unsupported_inputs(tmp_path):
                     {"file": str(code), "severity": "low"},
                 ]
             }
-        )
+        ),
+        encoding="utf-8",
     )
     report = process_findings(findings, "sanitize")
     assert report["outcome_counts"] == {"SKIPPED": 1, "SANITIZED": 1, "NOT_SUPPORTED": 1}
@@ -156,7 +157,7 @@ def test_unlisted_text_extension_has_no_handler(tmp_path):
     from stegguard.detector import analyze_file, result_to_json_dict
 
     source = tmp_path / "notes.unlisted"
-    source.write_text("hello\u200b")
+    source.write_text("hello\u200b", encoding="utf-8")
     report = result_to_json_dict(analyze_file(source))
     assert report["inspection_status"] == "NOT_SUPPORTED"
     assert report["unsupported_reason"]
@@ -188,7 +189,7 @@ def test_mixed_inspection_and_rewrite_outcomes(tmp_path, monkeypatch):
     args = ["--ext", "txt", "--json", str(findings), "--html", str(html)]
     for paths in ([str(inputs), "-r"], [str(inputs / name) for name in fixtures]):
         assert main([*paths, *args]) == 2
-        report = json.loads(findings.read_text())
+        report = json.loads(findings.read_text(encoding="utf-8"))
         assert [
             report[key]
             for key in (
@@ -202,7 +203,7 @@ def test_mixed_inspection_and_rewrite_outcomes(tmp_path, monkeypatch):
         items = {Path(item["file"]).name: item for item in report["results"]}
         assert "Unicode text" in items["full.txt"]["checks_run"]
         assert not items["bad.txt"]["checks_run"]
-        rendered = html.read_text()
+        rendered = html.read_text(encoding="utf-8")
         for label, count in (
             ("Unsupported Files", 1),
             ("Incomplete Files", 1),

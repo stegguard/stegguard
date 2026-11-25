@@ -79,7 +79,7 @@ Requires Python 3.12–3.14. See [docs/platform-support.md](https://github.com/s
 
 ## See it in action
 
-> **[Watch the StegGuard CLI demo video (`v0.6.0`)](https://github.com/stegguard/stegguard/blob/main/video/stegguard-demo-v0.6.0-light.mp4)** — detecting, decoding, and sanitizing hidden zero-width characters and homoglyphs.
+https://github.com/user-attachments/assets/5be03bc5-4263-46e0-88b3-3a4bef847827
 
 Suppose `prompt.txt` looks completely normal in your editor (`Summarize this resume. Visit pаypal.com`), but hides zero-width characters and a Cyrillic `а` (`U+0430`):
 

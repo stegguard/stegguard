@@ -30,6 +30,7 @@ classifiers = [
 dependencies = []
 
 [project.urls]
+Homepage = "https://stegguard.com"
 Source = "https://github.com/stegguard/stegguard"
 Documentation = "https://github.com/stegguard/stegguard/tree/main/docs"
 Issues = "https://github.com/stegguard/stegguard/issues"
